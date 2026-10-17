@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Terminal-Bench Science 公开评测轨迹数据集：按题目横向比较模型、工具调用、运行成本与成功率。">
+  <title>Science Atlas · Terminal-Bench trajectories</title>
+  <link rel="stylesheet" href="style.css"><script src="app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#dataset"><span class="brand-icon">◈</span> SCIENCE<span class="brand-light">ATLAS</span></a>
+    <div class="sidebar-kicker">RESEARCH WORKSPACE</div>
+    <nav aria-label="主导航">
+      <a href="#dataset" data-tab="dataset"><span>▦</span> Dataset <small>数据集</small></a>
+      <a href="#compare" data-tab="compare"><span>⇄</span> Compare <small>轨迹对比</small></a>
+      <a href="#analysis" data-tab="analysis"><span>▥</span> Analysis <small>分析</small></a>
+      <a href="#about" data-tab="about"><span>ⓘ</span> Methodology <small>数据说明</small></a>
+    </nav>
+    <div class="sidebar-note"><span class="live-dot"></span> PUBLIC EVALUATIONS<p>One question.<br>Different ways to solve it.</p><a id="source-link" target="_blank" rel="noopener">Harbor Hub ↗</a></div>
+    <div class="sidebar-bottom">TERMINAL-BENCH SCIENCE<br><span>Trajectory research archive · v1</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Benchmarks <b>/</b> Terminal-Bench Science</span><div><span class="source-tag">● SOURCE-LINKED</span><span id="updated"></span></div></header>
+    <div id="load-error" class="notice" hidden></div>
+    <section id="dataset" class="view">
+      <div class="eyebrow">THE TRAJECTORY DATASET <span>01 / EXPLORE</span></div>
+      <div class="hero"><div><h1>Terminal-Bench <em>Science.</em></h1><p>从最终得分，走进解题过程。<br>检索每道科学问题的完整运行轨迹，比较不同模型如何推理、编写代码与调用工具。</p></div><a class="primary" href="#compare">开始横向对比 <span>↗</span></a></div>
+      <div id="stats" class="stats"></div>
+      <div class="section-heading"><div><h2>Models & configurations <span>模型与评测配置</span></h2><p>覆盖公开榜单的所有提交；保留 agent、推理强度与每次独立运行。</p></div><a class="button" href="data/runs.csv" download>↓ 运行清单 CSV</a></div>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>MODEL / AGENT</th><th>REASONING</th><th>RESOLUTION RATE <span title="Harbor 官方榜单指标">ⓘ</span></th><th>TOKENS</th><th>COST</th><th>TRAJECTORIES</th><th></th></tr></thead><tbody id="model-table"></tbody></table></div>
+      <div class="footnote"><span>↳ Resolution rate、tokens、cost 来自 Harbor 官方榜单；轨迹下载覆盖率单独显示。</span><a href="#about">数据格式与统计口径 ↗</a></div>
+    </section>
+    <section id="compare" class="view" hidden>
+      <div class="eyebrow">READ THE PROCESS <span>02 / COMPARE</span></div>
+      <div class="page-heading"><div><h1>One task. <em>Many approaches.</em></h1><p>选一道题，将不同模型的完整解题过程放在一起阅读。</p></div><button id="share" class="button">复制对比链接 ↗</button></div>
+      <div class="compare-shell">
+        <aside class="task-panel"><div class="task-panel-head"><b>问题列表</b><span id="task-count"></span></div><label class="search"><span>⌕</span><input id="task-search" type="search" placeholder="搜索题目名称…" aria-label="搜索题目"></label><select id="task-sort" aria-label="题目排序"><option value="name">按名称排序</option><option value="hard">先看低通过率</option><option value="disagree">先看模型分歧</option></select><div id="task-list"></div></aside>
+        <div class="compare-main"><div class="task-title"><span class="pill">SCIENTIFIC TASK</span><h2 id="selected-task"></h2><div id="task-description"></div></div>
+          <div id="model-picker" class="model-picker"></div>
+          <div class="reading-toolbar"><div><label>阅读模式 <select id="reading-mode"><option value="all">完整过程</option><option value="answer">最终回复</option><option value="tools">工具调用</option><option value="reasoning">推理 / Agent 消息</option></select></label><label><input id="show-system" type="checkbox"> 系统 / 环境提示</label><label><input id="sync-scroll" type="checkbox" checked> 同步滚动</label></div><label class="search"><span>⌕</span><input id="step-search" type="search" placeholder="搜索当前轨迹…" aria-label="搜索轨迹内容"></label></div>
+          <div id="compare-columns" class="compare-columns"></div>
+        </div>
+      </div>
+    </section>
+    <section id="analysis" class="view" hidden>
+      <div class="eyebrow">LOOK ACROSS RUNS <span>03 / ANALYZE</span></div><div class="page-heading"><div><h1>Patterns in <em>performance.</em></h1><p>观察题目难度、模型分歧，以及成功率与运行成本的关系。</p></div><a class="button" href="data/manifest.json" download>↓ 数据索引 JSON</a></div>
+      <div class="analysis-grid"><article class="panel"><div class="section-heading"><h2>Resolution × cost</h2><span class="subtle">官方榜单 · 每次运行平均成本</span></div><div id="cost-chart"></div></article><article class="panel"><h2>Paired task comparison</h2><p class="subtle">同一题目的平均 reward，比较两个配置的完整运行结果。</p><div id="pair-picker"></div><div id="pair-result"></div></article></div>
+      <div class="section-heading"><div><h2>Task × model matrix <span>题目成功率矩阵</span></h2><p>每格为 scored trials 中 reward = 1 的比例；点击进入该题与模型的轨迹。</p></div><label class="search"><span>⌕</span><input id="matrix-search" placeholder="筛选矩阵题目…" aria-label="筛选矩阵题目"></label></div>
+      <div class="legend"><span><i style="background:#edf1ef"></i>0%</span><span><i style="background:#b8e4cf"></i>33%</span><span><i style="background:#64bc98"></i>67%</span><span><i style="background:#187653"></i>100%</span><span>— 缺少评分</span></div><div id="matrix" class="table-wrap matrix"></div>
+    </section>
+    <section id="about" class="view" hidden>
+      <div class="eyebrow">PROVENANCE & REPRODUCIBILITY <span>04 / METHOD</span></div><h1>Follow the <em>evidence.</em></h1>
+      <div class="about-grid"><article class="panel"><h2>来源与覆盖范围</h2><p>数据来自 Harbor Hub 的 Terminal-Bench Science 公开榜单。下载器自动发现公开榜单、全部模型提交和 trial 分页，并按 trial ID 去重。每条运行都附有 Harbor 原始页面链接。</p><p id="coverage-note"></p><p>“所有模型”指本次快照中此数据集公开榜单可访问的提交。未上榜、私有、已删除或未提供的轨迹无法由公开接口取得。缺失、错误、等待下载均明确记录。</p></article>
+      <article class="panel"><h2>JSONL 数据格式</h2><pre>dataset/models/&lt;model&gt;/&lt;configuration-id&gt;/&lt;task&gt;.jsonl
+
+每行 = 一次独立运行
+  model / agent / reasoning_effort
+  task_name / trial_id / job_id
+  source_url / fetched_at
+  download_status / download_error
+  trial       原始运行指标与元数据
+  trajectory  原始 ATIF 对象（完整 steps）</pre><p>同题的重复运行分别保留，不用最好的一次替代。网页按需载入 gzip JSONL，解压后可直接下载原始 JSONL。</p></article>
+      <article class="panel"><h2>统计口径</h2><p>榜单首页与成本图使用 Harbor 官方聚合指标。矩阵统计 is_scored ≠ false 且 reward 为数字的 trial：成功定义为 reward = 1；未知值不作为失败。</p><p>配对分析只使用两个配置都具有完整预期评分的题目，比较每题的平均 reward，展示胜 / 平 / 负。不同模型的运行序号并不代表相同随机种子。</p><p>轨迹中的步骤与工具调用计数来自 ATIF steps；耗时来自 trial 的 started_at / finished_at，包含环境和验证时间。推理内容仅展示源轨迹实际公开的内容。</p></article>
+      <article class="panel"><h2>复现与更新</h2><pre>python3 crawl.py crawl
+python3 crawl.py build
+python3 crawl.py serve --port 8765
+
+# 仅下载指定题目 / 模型
+python3 crawl.py crawl --task traffic-flux-inversion
+python3 crawl.py crawl --model "GPT-6 Astra"
+
+# 重新发现榜单并更新数据
+python3 crawl.py crawl --refresh</pre><p>仅使用 Python 标准库，支持并发、请求间隔、重试、原子写入和断点续传。工具的 README 记录完整参数与数据限制。</p><a href="data/manifest.json" download>下载完整 manifest ↗</a></article></div>
+    </section>
+    <footer><span>SCIENCE ATLAS <b>·</b> A closer look at scientific problem solving.</span><span>Public trajectories. Traceable sources.</span></footer>
+  </main>
+</body></html>

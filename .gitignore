@@ -1,0 +1,9 @@
+/dataset
+/dist
+/hub-export
+/.openai
+/.venv
+__pycache__/
+*.pyc
+*.log
+.env
