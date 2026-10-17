@@ -8,3 +8,8 @@ __pycache__/
 *.log
 .env
 node_modules/
+/site-host/
+/public-site/
+/site-deployment.tar.gz
+
+/pages-host/

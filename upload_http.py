@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -39,7 +40,7 @@ def remote_matches(remote, descriptor, local):
     return digest.hexdigest() == getattr(remote, 'blob_id', None)
 
 
-def upload(stage, repo, public=False):
+def upload(stage, repo, public=False, multipart_workers=128):
     # Set before importing the SDK. The Xet path stalled on this connection.
     os.environ['HF_HUB_DISABLE_XET'] = '1'
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
@@ -56,7 +57,7 @@ def upload(stage, repo, public=False):
     def status(state, known=None, **extra):
         known = confirmed if known is None else known
         return {'state': state, 'snapshot_at': manifest['created_at'], 'updated_at': crawl.now(),
-                'transport': 'http_lfs', 'confirmed_files': len(known), 'total_files': len(files),
+                'transport': 'http_lfs_multipart' if multipart_workers else 'http_lfs', 'confirmed_files': len(known), 'total_files': len(files),
                 'confirmed_bytes': sum(item['bytes'] for item in known), 'total_bytes': total_bytes, **extra}
 
     def commit(paths, state, message):
@@ -90,7 +91,8 @@ def upload(stage, repo, public=False):
         commit(metadata, status('uploading_raw'), 'Update final trajectory capture and analysis tables')
         pending = [item for item in files if item['path'] not in known]
         print(f"Verified {len(confirmed)}/{len(files)} existing archives; {len(pending)} remaining.", flush=True)
-        for batch in batches(pending):
+        def commit_batch(batch):
+            nonlocal confirmed
             next_known = confirmed + batch
             commit([item['path'] for item in batch], status('uploading_raw', next_known),
                    f"Archive trajectories {len(next_known)}/{len(files)}")
@@ -99,6 +101,38 @@ def upload(stage, repo, public=False):
             print(f"Progress: {len(confirmed)}/{len(files)} archives; "
                   f"{sum(item['bytes'] for item in confirmed)/1e9:.3f}/{total_bytes/1e9:.3f} GB committed; "
                   f"elapsed {elapsed:.0f}s", flush=True)
+        if multipart_workers and pending:
+            from hf_multipart import MultipartUploader
+            transfer = MultipartUploader(workers=multipart_workers)
+            try:
+                remaining = sorted(pending, key=lambda item: item['bytes'], reverse=True)
+                for attempt in range(1, 4):
+                    failed, ready = [], []
+                    with ThreadPoolExecutor(max_workers=8) as pool:
+                        futures = {pool.submit(transfer.upload, stage/item['path'], item, repo): item for item in remaining}
+                        for future in as_completed(futures):
+                            item = futures[future]
+                            try:
+                                future.result()
+                                ready.append(item)
+                            except Exception as error:
+                                failed.append(item)
+                                print(f"Archive transfer pass {attempt}: {type(error).__name__}: {Path(item['path']).name}", flush=True)
+                            if ready and (len(ready) >= 20 or sum(item['bytes'] for item in ready) >= 64*1024*1024):
+                                commit_batch(ready)
+                                ready = []
+                    if ready:
+                        commit_batch(ready)
+                    if not failed:
+                        break
+                    remaining = failed
+                else:
+                    raise RuntimeError(f'{len(remaining)} archives failed after three transfer passes')
+            finally:
+                transfer.close()
+        else:
+            for batch in batches(pending):
+                commit_batch(batch)
         # Never mark complete solely because the upload calls returned successfully.
         remote = remote_index()
         missing = [item['path'] for item in files
@@ -118,12 +152,13 @@ def main():
     parser.add_argument('--repo', required=True)
     parser.add_argument('--public', action='store_true')
     parser.add_argument('--parent-lock-held', action='store_true')
+    parser.add_argument('--multipart-workers',type=int,default=128,help='Parallel multipart requests; 0 selects the original SDK uploader')
     args = parser.parse_args()
     if args.parent_lock_held:
-        upload(args.stage.resolve(), args.repo, args.public)
+        upload(args.stage.resolve(), args.repo, args.public,args.multipart_workers)
     else:
         with crawl.dataset_lock(args.stage.resolve()):
-            upload(args.stage.resolve(), args.repo, args.public)
+            upload(args.stage.resolve(), args.repo, args.public,args.multipart_workers)
 
 
 if __name__ == '__main__':

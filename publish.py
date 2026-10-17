@@ -20,6 +20,7 @@ import crawl
 HERE = Path(__file__).resolve().parent
 DEFAULT_REPO = "yangjunxiao2021/terminal-bench-science-trajectories"
 CODE_REPO = "https://github.com/yangjunx21/terminal-bench-science-atlas"
+SITE_URL = "https://yangjunx21.github.io/terminal-bench-science-atlas/"
 
 
 def file_hash(path):
@@ -70,8 +71,10 @@ configs:
 # Terminal-Bench Science trajectories
 
 An archival snapshot of public Harbor evaluation runs, with original ATIF
-trajectories and flat analysis tables. Code and cross-model comparison UI:
-[{CODE_REPO}]({CODE_REPO}).
+trajectories and flat analysis tables.
+
+- [TB Science 轨迹分析 — online comparison reader]({SITE_URL})
+- [Code and download scripts]({CODE_REPO})
 
 **This is a partial capture, not a claim that all trajectories were downloaded.**
 
@@ -110,7 +113,7 @@ not infer an Arrow schema across heterogeneous nested ATIF objects.
 
 ```python
 from datasets import load_dataset
-df = load_dataset("{repo}", "trials", split="test", token=True).to_pandas()
+df = load_dataset("{repo}", "trials", split="test").to_pandas()
 scored = df[(df.is_scored == 1) & df.reward.notna()]
 rates = scored.assign(passed=scored.reward.eq(1)).groupby("model").passed.mean()
 print(rates.sort_values(ascending=False))
@@ -120,7 +123,7 @@ print(rates.sort_values(ascending=False))
 import gzip, json
 from huggingface_hub import hf_hub_download
 row = df.loc[df.download_status.eq("downloaded")].iloc[0]
-path = hf_hub_download("{repo}", row.raw_path, repo_type="dataset", token=True)
+path = hf_hub_download("{repo}", row.raw_path, repo_type="dataset")
 with gzip.open(path, "rt") as f:
     runs = [json.loads(line) for line in f]
 trajectory = next(r["trajectory"] for r in runs if r["trial_id"] == row.trial_id)

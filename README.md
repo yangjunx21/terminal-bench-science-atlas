@@ -2,16 +2,17 @@
 
 Archive public [Harbor Terminal-Bench Science](https://hub.harborframework.com/datasets/terminal-bench-science/terminal-bench-science/latest?tab=leaderboard) trajectories, preserve the original ATIF, and compare models on each task in a static website.
 
+- Website: https://yangjunx21.github.io/terminal-bench-science-atlas/
 - Code: https://github.com/yangjunx21/terminal-bench-science-atlas
 - Dataset: https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories
 - [中文使用说明](docs/usage.zh.md)
 
-Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs `uvx` or `huggingface_hub` installed in the active Python environment. Both repositories were initially created private.
+Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs `uvx` or `huggingface_hub` installed in the active Python environment. Both repositories are public.
 
 ## Download manually
 
 ```sh
-git clone git@github.com:yangjunx21/terminal-bench-science-atlas.git
+git clone https://github.com/yangjunx21/terminal-bench-science-atlas.git
 cd terminal-bench-science-atlas
 python3 crawl.py status
 python3 -u crawl.py crawl --workers 8
@@ -68,7 +69,7 @@ python3 publish.py upload
 
 The uploader uses the existing local HF login; do not put access tokens in code or Git. It creates a **private** dataset by default. Existing repository visibility is preserved. Use `--repo OWNER/NAME` for a different dataset. Upload interrupted files by rerunning the same upload command. After more Harbor downloads, rerun `prepare` and `upload`; unchanged task groups are reused.
 
-Uploads default to HTTP/LFS because Xet uploads stalled on the development connection. Raw archives are committed in batches of at most 20 files / 64 MiB (a larger individual archive is committed alone). Already matching remote content hashes are skipped, each batch updates `upload-status.json`, and all remote archive hashes/sizes are verified before marking the capture upload complete. `--transport xet` retains the CLI transport as an alternative.
+Uploads default to HTTP/LFS because Xet uploads stalled on the development connection. Large objects use parallel multipart requests with signed URLs kept in memory; no access token is placed in browser code. Raw archives are committed in batches of at most 20 files / 64 MiB (a larger individual archive is committed alone). Already matching remote content hashes are skipped, each batch updates `upload-status.json`, and all remote archive hashes/sizes are verified before marking the capture upload complete. `--transport xet` retains the CLI transport as an alternative.
 
 For a one-shot background sync that uploads the prepared capture now, waits for the active downloader/retry manager, then prepares and uploads the final local capture:
 
@@ -76,18 +77,24 @@ For a one-shot background sync that uploads the prepared capture now, waits for 
 python3 -u sync_dataset.py
 ```
 
-On the original development machine this is already running with a sleep inhibitor; progress is in `dataset/hf-sync-http.log`. Do not start a duplicate. The stage writer lock prevents overlapping packaging/uploads.
+The stage writer lock prevents overlapping packaging/uploads. The final prepared capture can also be resumed directly, without repackaging:
 
-The replacement HTTP uploader logs to `dataset/hf-sync-http.log`. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
+```sh
+uvx --from huggingface_hub python upload_http.py --stage hub-export \
+  --repo yangjunxiao2021/terminal-bench-science-trajectories --public --multipart-workers 128
+```
+
+On the original development machine a background uploader is already running with a sleep inhibitor; its log is `dataset/hf-sync-public.log`. Do not start a duplicate. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
 
 ## Access and sharing
 
-Both repositories remain private unless the owner explicitly changes their visibility. A URL alone does not grant access. Invite collaborators for the private GitHub repository; for private Hugging Face collaboration, use an organization with authorized members. Public sharing requires changing visibility. The local website binds only to `127.0.0.1`; it must be deployed separately for others to browse remotely.
+The [comparison website](https://yangjunx21.github.io/terminal-bench-science-atlas/), GitHub code repository and Hugging Face dataset are public. Readers can open their links without an invitation. `upload-status.json` records whether all raw archives have been committed and verified. The local server remains available at `127.0.0.1`; the public website serves a frozen text reading snapshot from `codex/public-site`, independently of the development machine.
 
-Once the dataset upload is complete and the viewer has access, sign in with their own HF account and download the archive:
+To update that snapshot, run `export_public_site.py` after a text-only website build, copy its output into the separate `pages-host` checkout and commit it. `deploy_pages.py --workers 64 --enable` publishes that checkout and configures GitHub Pages. The exporter caps web chunks at 3 MiB; the reader reassembles their exact gzip bytes. The deployment helper splits Git transfers across temporary branches and removes them after publishing. Use an existing SSH key when HTTPS pushes time out. `verify_public.py --site https://yangjunx21.github.io/terminal-bench-science-atlas/ --require-complete` checks anonymous website/data access and requires the raw upload to be complete.
+
+Once the dataset upload is complete, anyone can download the public archive without signing in:
 
 ```sh
-hf auth login
 hf download yangjunxiao2021/terminal-bench-science-trajectories --type dataset --local-dir tb-science
 ```
 
@@ -123,7 +130,7 @@ from datasets import load_dataset
 
 df = load_dataset(
     "yangjunxiao2021/terminal-bench-science-trajectories",
-    "trials", split="test", token=True,
+    "trials", split="test",
 ).to_pandas()
 scored = df[(df.is_scored == 1) & df.reward.notna()]
 summary = scored.assign(passed=scored.reward.eq(1)).groupby(

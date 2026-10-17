@@ -54,7 +54,7 @@ class HttpUploadTests(unittest.TestCase):
             (stage/'manifest.json').write_text(json.dumps({'created_at': 'test'}))
             (stage/'inventory.json').write_text(json.dumps([{'path':'archive.gz','bytes':7,'sha256':'expected'}]))
             with self.assertRaisesRegex(RuntimeError, 'Remote checksum verification failed'):
-                upload_http.upload(stage, 'owner/dataset')
+                upload_http.upload(stage, 'owner/dataset', multipart_workers=0)
             self.assertTrue(api.private)
             self.assertTrue(all(state['state'] != 'complete' for state in states))
             self.assertEqual(json.loads((stage/'upload-status.json').read_text())['state'], 'interrupted')

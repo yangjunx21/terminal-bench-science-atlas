@@ -25,6 +25,7 @@ function saveDownload(text, filename, type = 'application/x-ndjson') {
 }
 function notice(text) { $('#load-error').hidden = false; $('#load-error').textContent = text; }
 async function pollDownload() {
+  if(data?.public_snapshot) return;
   try {
     const response=await fetch('data/crawl-status.json', {cache:'no-store'});
     if(!response.ok) return;
@@ -86,7 +87,7 @@ function renderOverview() {
     selectedModels = [...new Set([button.dataset.compare, data.models.find(m=>m.id !== button.dataset.compare)?.id].filter(Boolean))]; setRoute();
   });
   $('#coverage-note').textContent = `本快照：${data.models.length} 个模型配置、${data.tasks.length} 道题；榜单记录 ${data.official_trials} 次运行，其中 ${data.expected_trials} 次提供公开运行列表，${data.unlisted_trials} 次未公开 trial。已归档 ${downloaded} 条轨迹；不可用 ${data.counts.unavailable || 0}，错误 ${data.counts.error || 0}，等待 ${data.counts.pending || 0}。榜单发现${data.discovery_complete ? '完整' : '未完成'}。`;
-  if(data.web_projection==='text_only') $('#coverage-note').textContent+=' 此网页快照为文本阅读版，省略内嵌图片与二进制；网页下载的 JSONL 带 text 标记。完整无损 ATIF / JSONL 保存在运行下载器的本地 dataset 目录。';
+  if(data.web_projection==='text_only') $('#coverage-note').textContent+=' 此网页快照为文本阅读版，省略内嵌图片与二进制；网页下载的 JSONL 带 text 标记。完整无损 ATIF / JSONL 可从 Hugging Face 数据集下载。';
 }
 function renderTasks() {
   const q = $('#task-search').value.trim().toLowerCase();
@@ -263,7 +264,7 @@ async function renderCompare() {
       const readable=record?.trajectory || record?.reading_trajectory;
       if(!readable){if(run.download_status === 'downloaded') throw new Error('轨迹文件中没有此 trial。');body.innerHTML=unavailable;return;}
       renderSteps(body,record);
-      if(record.source_format==='nonstandard_json') body.insertAdjacentHTML('afterbegin','<p class="projection-note">源文件含未加引号的脱敏标记。此处显示阅读副本，脱敏数值留空；原始文本完整保存在本地 JSONL 的 raw_trajectory 中。</p>');
+      if(record.source_format==='nonstandard_json') body.insertAdjacentHTML('afterbegin','<p class="projection-note">源文件含未加引号的脱敏标记。此处显示阅读副本，脱敏数值留空；原始文本完整保存在完整数据 JSONL 的 raw_trajectory 中。</p>');
       if(!$('.task-prompt')){
         const prompts=readable.steps.filter(s=>s.source==='user').map(s=>content(s.message)).filter(s=>!s.startsWith('<environment_context>'));
         const prompt=prompts.sort((a,b)=>b.length-a.length)[0];

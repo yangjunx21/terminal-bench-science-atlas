@@ -19,13 +19,13 @@ python3 crawl.py serve --port 8765
 
 页面地址：<http://localhost:8765>。后台下载会周期性更新网页快照；原始文件很大时，网页索引会落后于实时归档数量，页面会分别显示。源文件含未加引号的 `[REDACTED]` 时，完整原文保存在 `raw_trajectory`，阅读副本只将被脱敏的字段留空并明确标注。
 
-GitHub：[yangjunx21/terminal-bench-science-atlas](https://github.com/yangjunx21/terminal-bench-science-atlas)，Hugging Face：[yangjunxiao2021/terminal-bench-science-trajectories](https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories)，均保持私有。HF 上传由 `sync_dataset.py` 执行：先上传已打包快照，等待下载和重试结束，再打包并增量同步。开发机已有后台进程，日志为 `dataset/hf-sync-http.log`，不要重复启动；中断后可重跑。单独准备和上传命令为 `python3 publish.py prepare`、`python3 publish.py upload`。
+GitHub：[yangjunx21/terminal-bench-science-atlas](https://github.com/yangjunx21/terminal-bench-science-atlas)，Hugging Face：[yangjunxiao2021/terminal-bench-science-trajectories](https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories)，均已公开。开发机已有后台 HF 上传进程，日志为 `dataset/hf-sync-public.log`，不要重复启动。单独准备和上传命令为 `python3 publish.py prepare`、`python3 publish.py upload --public`；已打包数据续传可使用 `uvx --from huggingface_hub python upload_http.py --stage hub-export --repo yangjunxiao2021/terminal-bench-science-trajectories --public --multipart-workers 128`。
 
 阅读器默认显示 Markdown／公式：标题、列表、表格、代码高亮、行内 `$...$` / `\(...\)` 和独立 `$$...$$` / `\[...\]` 公式；代码与独立公式均有复制按钮。工具日志保持原样，也可在“文本显示”中切回原始文本。相关库及字体已随仓库保存，本地排版无需 CDN。
 
-HF 原来的 Xet 传输曾卡住，现默认使用 HTTP/LFS 小批次上传；替代进程日志为 `dataset/hf-sync-http.log`。`hub-export/upload-status.json` 中的 `confirmed_files` 表示已提交的文件数，只有远端全部文件的大小与内容哈希验证通过后才会写为 `complete`。
+HF 原来的 Xet 传输曾卡住，现使用 HTTP/LFS 并行分块、小批次提交。`hub-export/upload-status.json` 中的 `confirmed_files` 表示已提交的文件数，只有远端全部文件的大小与内容哈希验证通过后才会写为 `complete`。
 
-两个仓库均为私有，单独发送链接不会授权别人访问。GitHub 可邀请协作者；HF 私有协作需放在组织下并授权成员，或明确选择公开。`localhost:8765` 当前只绑定本机，别人浏览网页还需单独部署。
+公网网页：[TB Science 轨迹分析](https://yangjunx21.github.io/terminal-bench-science-atlas/)，无需登录，开发机关闭后仍可访问。GitHub 代码和 HF 数据集已公开，可直接分享链接。公网网页使用冻结的文本阅读快照，保留公式、Markdown 和模型对比；原始归档上传是否完成以 HF 的 upload-status.json 为准。`localhost:8765` 继续供本机使用。
 
 ---
 
