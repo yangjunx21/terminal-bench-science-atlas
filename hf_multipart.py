@@ -96,8 +96,8 @@ class MultipartUploader:
 
     def upload(self, source, descriptor, repo):
         if descriptor['bytes'] > 64 * 1024 * 1024:
-            # Issue signed part URLs only when this large file can actually
-            # transfer; queued gigabyte-sized plans would otherwise expire.
+            # Give one large archive the available part connections. Too many
+            # simultaneous objects can starve sockets and cause S3 idle timeouts.
             with self.large_gate:
                 return self._upload(source, descriptor, repo)
         return self._upload(source, descriptor, repo)
