@@ -21,6 +21,7 @@
   </aside>
   <main>
     <header class="topbar"><span>Benchmarks <b>/</b> Terminal-Bench Science</span><div><span class="source-tag">● SOURCE-LINKED</span><span id="updated"></span></div></header>
+    <div id="download-progress" class="download-progress" hidden aria-live="polite"></div>
     <div id="load-error" class="notice" hidden></div>
     <section id="dataset" class="view">
       <div class="eyebrow">THE TRAJECTORY DATASET <span>01 / EXPLORE</span></div>
@@ -59,7 +60,9 @@
   source_url / fetched_at
   download_status / download_error
   trial       原始运行指标与元数据
-  trajectory  原始 ATIF 对象（完整 steps）</pre><p>同题的重复运行分别保留，不用最好的一次替代。网页按需载入 gzip JSONL，解压后可直接下载原始 JSONL。</p></article>
+  trajectory  原始合法 ATIF 对象（完整 steps）
+  raw_trajectory  源文件不是合法 JSON 时的完整原文
+  reading_trajectory  脱敏数值留空的阅读副本</pre><p>同题的重复运行分别保留，不用最好的一次替代。网页按需载入 gzip JSONL，解压后可直接下载原始 JSONL。</p></article>
       <article class="panel"><h2>统计口径</h2><p>榜单首页与成本图使用 Harbor 官方聚合指标。矩阵统计 is_scored ≠ false 且 reward 为数字的 trial：成功定义为 reward = 1；未知值不作为失败。</p><p>配对分析只使用两个配置都具有完整预期评分的题目，比较每题的平均 reward，展示胜 / 平 / 负。不同模型的运行序号并不代表相同随机种子。</p><p>轨迹中的步骤与工具调用计数来自 ATIF steps；耗时来自 trial 的 started_at / finished_at，包含环境和验证时间。推理内容仅展示源轨迹实际公开的内容。</p></article>
       <article class="panel"><h2>复现与更新</h2><pre>python3 crawl.py crawl
 python3 crawl.py build
@@ -69,8 +72,8 @@ python3 crawl.py serve --port 8765
 python3 crawl.py crawl --task traffic-flux-inversion
 python3 crawl.py crawl --model "GPT-6 Astra"
 
-# 重新发现榜单并更新数据
-python3 crawl.py crawl --refresh</pre><p>仅使用 Python 标准库，支持并发、请求间隔、重试、原子写入和断点续传。工具的 README 记录完整参数与数据限制。</p><a href="data/manifest.json" download>下载完整 manifest ↗</a></article></div>
+# 重新发现榜单，保留成功下载
+python3 crawl.py crawl --rediscover</pre><p>仅使用 Python 标准库，支持并发、请求间隔、重试、原子写入和断点续传。工具的 README 记录完整参数与数据限制。</p><a href="data/manifest.json" download>下载完整 manifest ↗</a></article></div>
     </section>
     <footer><span>SCIENCE ATLAS <b>·</b> A closer look at scientific problem solving.</span><span>Public trajectories. Traceable sources.</span></footer>
   </main>

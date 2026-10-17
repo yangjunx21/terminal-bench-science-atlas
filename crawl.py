@@ -12,11 +12,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import gzip
 import hashlib
+import io
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -31,13 +34,13 @@ STATIC_ASSET_BYTES = 24 * 1024 * 1024
 
 
 @contextmanager
-def dataset_lock(root):
+def dataset_lock(root, wait=False):
     """Prevent concurrent crawl / build writers; the OS releases stale locks."""
     import fcntl
     root.mkdir(parents=True, exist_ok=True)
     with (root / "_crawl.lock").open("a+") as stream:
         try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(stream, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
             raise RuntimeError(f"Another crawl/build is writing {root}. Stop it before starting another writer.") from None
         try:
@@ -87,6 +90,18 @@ def inventory(root):
         counts[match.group(1) if match else "unknown"] += 1
         size += path.stat().st_size
     return {"counts": dict(counts), "cache_bytes": size}
+
+
+def cache_status(path):
+    """Read only the cache header; resuming must not parse gigabytes of ATIF."""
+    if not path.exists():
+        return "pending"
+    try:
+        with path.open(encoding="utf-8") as stream:
+            match = re.search(r'"status"\s*:\s*"([^\"]+)"', stream.read(512))
+        return match.group(1) if match else "error"
+    except (OSError, UnicodeError):
+        return "error"
 
 
 def now():
@@ -157,6 +172,13 @@ class Client:
         self.lock, self.next_request = threading.Lock(), 0.0
         self.refresh = refresh
         self.large_requests = threading.BoundedSemaphore(2)
+        self.large_bodies = threading.BoundedSemaphore(2)
+        self.metrics = {"network_bytes": 0, "requests": 0, "active_requests": 0, "request_errors": 0}
+        self.metrics_lock = threading.Lock()
+
+    def stats(self):
+        with self.metrics_lock:
+            return dict(self.metrics)
 
     def request(self, path, *, body=None, headers=None, cache=True, retries=None):
         url = path if path.startswith("https://") else self.origin + path
@@ -171,6 +193,10 @@ class Client:
                 self.next_request = max(self.next_request, time.monotonic()) + self.interval
             if delay:
                 time.sleep(delay)
+            with self.metrics_lock:
+                self.metrics["requests"] += 1
+                self.metrics["active_requests"] += 1
+            large_body = False
             try:
                 req = Request(url, data=body.encode() if body is not None else None, headers={
                     "User-Agent": "HarborScienceArchive/1.0 (public research dataset downloader)",
@@ -178,20 +204,38 @@ class Client:
                     **(headers or {}),
                 })
                 with urlopen(req, timeout=self.timeout) as response:
-                    raw = response.read()
+                    buffer = io.BytesIO()
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        buffer.write(chunk)
+                        with self.metrics_lock:
+                            self.metrics["network_bytes"] += len(chunk)
+                        if buffer.tell() > 8 * 1024 * 1024 and not large_body:
+                            self.large_bodies.acquire()
+                            large_body = True
+                    raw = buffer.getvalue()
                     if response.headers.get("Content-Encoding") == "gzip":
                         raw = gzip.decompress(raw)
                     text = raw.decode("utf-8")
                 if cache:
                     atomic(target, text)
                 return text
-            except (HTTPError, URLError, TimeoutError, ConnectionError) as exc:
+            except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, IncompleteRead) as exc:
+                with self.metrics_lock:
+                    self.metrics["request_errors"] += 1
                 code = getattr(exc, "code", None)
                 if code in (401, 403, 404) or attempt == retries:
                     raise
                 retry_after = getattr(exc, "headers", {}).get("Retry-After", "")
                 wait = float(retry_after) if retry_after.isdigit() else min(30, 2 ** attempt)
                 time.sleep(wait)
+            finally:
+                if large_body:
+                    self.large_bodies.release()
+                with self.metrics_lock:
+                    self.metrics["active_requests"] -= 1
         raise RuntimeError("request retry exhausted")
 
 
@@ -260,26 +304,26 @@ def duration(trial):
         return None
 
 
-def download(client, root, trial, refresh=False):
+def download(client, root, trial, refresh=False, defer_original=False, original_only=False):
     target = root / "_runs" / (trial["id"] + ".json")
-    if target.exists() and not refresh:
-        try:
-            cached = json.loads(target.read_text())
-            if cached.get("status") == "downloaded":
-                return "cached"
-        except ValueError:
-            pass
+    if not refresh and cache_status(target) == "downloaded":
+        return "cached"
     path = f"/api/trials/{trial['id']}/trajectory?" + urlencode({"jobId": trial["job_id"]})
     try:
-        fallback = False
-        try:
-            trajectory = json.loads(client.request(path, cache=False, retries=1))
-            fallback = trajectory is None
-        except HTTPError as exc:
-            if exc.code not in (404, 500, 502, 503, 504):
-                raise
-            fallback = True
+        fallback = original_only
+        if not original_only:
+            try:
+                trajectory = json.loads(client.request(path, cache=False, retries=0))
+                fallback = trajectory is None
+            except HTTPError as exc:
+                if exc.code not in (404, 500, 502, 503, 504):
+                    raise
+                fallback = True
+            except (TimeoutError, socket.timeout, URLError, ConnectionError, IncompleteRead, json.JSONDecodeError, EOFError, gzip.BadGzipFile):
+                fallback = True
         if fallback:
+            if defer_original:
+                return "deferred"
             # Large ATIFs can exceed the normalized trajectory route's response
             # limit. The same public file browser exposes the original ATIF.
             path = f"/api/trials/{trial['id']}/files/agent/trajectory.json?" + urlencode({"jobId": trial["job_id"]})
@@ -321,6 +365,32 @@ def text_projection(value):
 
 
 def build(root, site, web_text_only=False):
+    with dataset_lock(site, wait=True):
+        return _build(root, site, web_text_only)
+
+
+def snapshot(root, site, web_text_only=True):
+    """Export a stable reading snapshot while the crawler keeps downloading."""
+    frozen = root / "_web-snapshot"
+    with dataset_lock(frozen):
+        shutil.copy2(root / "catalog.json", frozen / "catalog.json")
+        cache = frozen / "_runs"
+        cache.mkdir(exist_ok=True)
+        for source in (root / "_runs").glob("*.json"):
+            target = cache / source.name
+            if target.exists() and target.stat().st_ino == source.stat().st_ino:
+                continue
+            temporary = target.with_suffix(".link.tmp")
+            temporary.unlink(missing_ok=True)
+            try:
+                os.link(source, temporary)
+            except OSError:
+                shutil.copy2(source, temporary)
+            temporary.replace(target)
+        return build(frozen, site, web_text_only)
+
+
+def _build(root, site, web_text_only=False):
     catalog = json.loads((root / "catalog.json").read_text())
     state_path = root / "_build-state.json"
     previous = json.loads(state_path.read_text()) if state_path.exists() else {}
@@ -341,7 +411,7 @@ def build(root, site, web_text_only=False):
         relative = f"models/{model['directory']}/{model_id}/{slug(task)}.jsonl"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        fingerprint = hashlib.sha256(dumps([4, web_text_only, model, items, [
+        fingerprint = hashlib.sha256(dumps([5, web_text_only, model, items, [
             (str(t["id"]), (root / "_runs" / (t["id"] + ".json")).stat().st_mtime_ns,
              (root / "_runs" / (t["id"] + ".json")).stat().st_size)
             if (root / "_runs" / (t["id"] + ".json")).exists() else (t["id"], None)
@@ -363,7 +433,8 @@ def build(root, site, web_text_only=False):
                 cached = root / "_runs" / (trial["id"] + ".json")
                 data = json.loads(cached.read_text()) if cached.exists() else {"status": "pending", "trajectory": None}
                 trajectory = data.get("trajectory")
-                steps = trajectory.get("steps", []) if trajectory else []
+                reading = trajectory or data.get("reading_trajectory")
+                steps = reading.get("steps", []) if reading else []
                 row = {
                     "schema_version": "harbor-science-v1", "model_id": model_id,
                     "model": model["name"], "agent": model["agent"], "reasoning_effort": model["effort"],
@@ -373,10 +444,13 @@ def build(root, site, web_text_only=False):
                     "trajectory_url": data.get("source_url"),
                     "fetched_at": data.get("fetched_at"), "trial": trial, "trajectory": trajectory,
                 }
+                for key in ("raw_trajectory","reading_trajectory","source_format","parse_error","source_sha256","source_bytes","download_transport"):
+                    if key in data:
+                        row[key] = data[key]
                 out.write(dumps(row) + "\n")
                 summary = {k: row[k] for k in ("model_id", "task_name", "trial_id", "job_id", "source_url", "download_status", "download_error")}
                 summary.update({
-                    "path": relative, "reward": trial.get("reward"), "status": trial.get("status"),
+                    "path": relative, "reward": trial.get("reward"), "status": trial.get("status"), "source_format":data.get("source_format","json"),
                     "scored": trial.get("is_scored", True), "error_type": trial.get("error_type"),
                     "input_tokens": trial.get("input_tokens"), "output_tokens": trial.get("output_tokens"),
                     "cache_tokens": trial.get("cache_tokens"), "cost_usd": trial.get("cost_usd"),
@@ -398,6 +472,8 @@ def build(root, site, web_text_only=False):
                 if web_text_only:
                     for line in src:
                         row = text_projection(json.loads(line))
+                        if row.get("raw_trajectory"):
+                            row["raw_trajectory"] = "Original nonstandard JSON text is preserved in the local full JSONL; this web copy uses reading_trajectory."
                         row["web_projection"] = "text_only"
                         encoded = (dumps(row) + "\n").encode("utf-8")
                         web_bytes += len(encoded)
@@ -406,7 +482,15 @@ def build(root, site, web_text_only=False):
                     shutil.copyfileobj(src, gz)
                     web_bytes = target.stat().st_size
         dest.with_name(dest.name + ".tmp").replace(dest)
-        descriptor = {"raw_bytes": web_bytes, "original_bytes": target.stat().st_size, "compressed_bytes": dest.stat().st_size, "parts": [relative + ".gz"]}
+        digest = hashlib.sha256()
+        with dest.open("rb") as compressed:
+            for block in iter(lambda: compressed.read(1024 * 1024), b""):
+                digest.update(block)
+        asset = relative + "." + digest.hexdigest()[:16] + ".gz"
+        versioned = site / "data" / asset
+        dest.replace(versioned)
+        dest = versioned
+        descriptor = {"raw_bytes": web_bytes, "original_bytes": target.stat().st_size, "compressed_bytes": dest.stat().st_size, "parts": [asset]}
         # Static hosting commonly limits individual assets to 25 MiB. Binary
         # chunks reassemble to the exact gzip stream; local JSONL stays whole.
         chunk_bytes = STATIC_ASSET_BYTES
@@ -417,7 +501,7 @@ def build(root, site, web_text_only=False):
                 while chunk := source.read(chunk_bytes):
                     part = dest.with_name(dest.name + f".part-{index:04d}")
                     part.write_bytes(chunk)
-                    descriptor["parts"].append(relative + f".gz.part-{index:04d}")
+                    descriptor["parts"].append(asset + f".part-{index:04d}")
                     index += 1
             dest.unlink()
         files[relative] = descriptor
@@ -445,26 +529,27 @@ def build(root, site, web_text_only=False):
             shutil.copy2(path, site / path.name)
     # A static-site CSV inventory is convenient for pandas / spreadsheets.
     import csv
-    with (site / "data" / "runs.csv").open("w", newline="", encoding="utf-8") as f:
+    with (site / "data" / "runs.csv.tmp").open("w", newline="", encoding="utf-8") as f:
         keys = [k for k in runs[0] if k != "download_error"] if runs else ["trial_id"]
         writer = csv.DictWriter(f, fieldnames=keys, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(runs)
+    (site / "data" / "runs.csv.tmp").replace(site / "data" / "runs.csv")
     print(f"Built {site}: {len(models)} configurations, {len(tasks)} tasks, {len(runs)} runs, {dict(counts)}", flush=True)
     return manifest
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["crawl", "discover", "build", "serve", "status"], nargs="?", default="crawl")
+    parser.add_argument("command", choices=["crawl", "discover", "build", "snapshot", "serve", "status"], nargs="?", default="crawl")
     parser.add_argument("--url", default=DEFAULT_URL, help="Harbor dataset, leaderboard row, or trial URL")
     parser.add_argument("--leaderboard", help="Only this leaderboard name (default: all public leaderboards)")
     parser.add_argument("--output", type=Path, default=HERE / "dataset")
     parser.add_argument("--site", type=Path, default=HERE / "dist")
-    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--interval", type=float, default=0.08, help="Minimum time between request starts, globally")
-    parser.add_argument("--timeout", type=float, default=90)
-    parser.add_argument("--retries", type=int, default=4)
+    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--retries", type=int, default=1)
     parser.add_argument("--refresh", action="store_true", help="Refresh discovery and downloaded trajectories")
     parser.add_argument("--rediscover", action="store_true", help="Refresh leaderboard discovery while preserving successful downloads")
     parser.add_argument("--model", action="append", default=[], help="Download only matching model label/id; repeatable")
@@ -474,8 +559,8 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--web-text-only", action="store_true", help="Omit embedded binary images from web assets only; dataset JSONL remains lossless")
     args = parser.parse_args(argv)
-    if not 1 <= args.workers <= 32 or args.interval < 0 or args.retries < 0 or args.timeout <= 0 or args.checkpoint_every < 0:
-        parser.error("workers must be 1..32; interval/retries nonnegative; timeout positive")
+    if not 1 <= args.workers <= 64 or args.interval < 0 or args.retries < 0 or args.timeout <= 0 or args.checkpoint_every < 0:
+        parser.error("workers must be 1..64; interval/retries nonnegative; timeout positive")
     root, site = args.output.resolve(), args.site.resolve()
     if args.command in ("crawl", "discover"):
         parsed = urlparse(args.url)
@@ -492,6 +577,9 @@ def main(argv=None):
         from functools import partial
         print(f"http://localhost:{args.port}", flush=True)
         ThreadingHTTPServer(("127.0.0.1", args.port), partial(SimpleHTTPRequestHandler, directory=str(site))).serve_forever()
+        return 0
+    if args.command == "snapshot":
+        snapshot(root,site,web_text_only=True)
         return 0
     try:
         with dataset_lock(root):
@@ -553,22 +641,55 @@ def execute(args, root, site):
     for trial in trials:
         by_model[trial["model_id"]].append(trial)
     trials = [items[index] for index in range(max((len(v) for v in by_model.values()), default=0)) for items in by_model.values() if index < len(items)]
-    print(f"Fetching {len(trials)} trajectories with {args.workers} workers (successful downloads resume automatically)…", flush=True)
     counts = defaultdict(int)
+    new_trials, retry_trials = [], []
+    for trial in trials:
+        state = cache_status(root / "_runs" / (trial["id"] + ".json"))
+        if state == "downloaded" and not args.refresh:
+            counts["cached"] += 1
+        elif state == "pending":
+            new_trials.append(trial)
+        else:
+            retry_trials.append(trial)
+    queue = new_trials + retry_trials
+    print(f"Selected {len(trials)} trials: skip {counts['cached']} cached; fetch {len(new_trials)} new, then retry {len(retry_trials)} failures; {args.workers} workers.", flush=True)
     pool = ThreadPoolExecutor(max_workers=args.workers)
     pending = []
     interrupted = False
     started = now()
+    clock_start = time.monotonic()
+    completed = counts["cached"]
+    monitor_stop = threading.Event()
     last_checkpoint = 0
     def progress(completed, state="running"):
-        status = dumps({"pid": os.getpid(), "state": state, "started_at": started, "updated_at": now(), "selected_trials": len(trials), "completed": completed, "counts": dict(counts)})
+        elapsed = max(0.001, time.monotonic() - clock_start)
+        metrics = client.stats()
+        status = dumps({"pid": os.getpid(), "state": state, "started_at": started, "updated_at": now(), "selected_trials": len(trials), "completed": completed, "remaining": len(trials) - completed, "counts": dict(counts), "elapsed_seconds": round(elapsed, 1), "downloaded_per_minute": round(counts.get("downloaded", 0) * 60 / elapsed, 2), "network_mbps": round(metrics["network_bytes"] / 1e6 / elapsed, 3), **metrics})
         atomic(root / "crawl-status.json", status)
         atomic(site / "data" / "crawl-status.json", status)
-    progress(0)
+    progress(completed)
+    def monitor():
+        ticks = 0
+        while not monitor_stop.wait(2):
+            progress(completed)
+            ticks += 1
+            if ticks % 15 == 0:
+                stats = client.stats()
+                elapsed = max(0.001, time.monotonic() - clock_start)
+                print(f"  {completed}/{len(trials)} · new {counts.get('downloaded', 0)} · {counts.get('downloaded', 0)*60/elapsed:.1f} trajectories/min · {stats['network_bytes']/1e6/elapsed:.2f} MB/s · active {stats['active_requests']}", flush=True)
+    monitor_thread = threading.Thread(target=monitor, daemon=True)
+    monitor_thread.start()
     try:
-        pending = [pool.submit(download, client, root, t, args.refresh) for t in trials]
-        for i, future in enumerate(as_completed(pending), 1):
-            counts[future.result()] += 1
+        pending = {pool.submit(download, client, root, t, args.refresh, True): t for t in queue}
+        original_trials = []
+        for future in as_completed(pending):
+            result = future.result()
+            if result == "deferred":
+                original_trials.append(pending[future])
+                continue
+            counts[result] += 1
+            completed += 1
+            i = completed
             if i % 25 == 0 or i == len(trials):
                 print(f"  {i}/{len(trials)}: {dict(counts)}", flush=True)
                 progress(i)
@@ -576,6 +697,15 @@ def execute(args, root, site):
             if args.checkpoint_every and changed - last_checkpoint >= args.checkpoint_every and i != len(trials):
                 build(root, site, args.web_text_only)
                 last_checkpoint = changed
+        if original_trials:
+            print(f"Fetching {len(original_trials)} original ATIF files with 2 memory-bounded workers…", flush=True)
+            pending = [pool.submit(download, client, root, t, args.refresh, False, True) for t in original_trials]
+            for future in as_completed(pending):
+                counts[future.result()] += 1
+                completed += 1
+                if completed % 10 == 0 or completed == len(trials):
+                    print(f"  {completed}/{len(trials)}: {dict(counts)}", flush=True)
+                    progress(completed)
     except KeyboardInterrupt:
         interrupted = True
         for future in pending:
@@ -583,6 +713,9 @@ def execute(args, root, site):
         print("Stopping new requests; preserving completed downloads…", flush=True)
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
+        monitor_stop.set()
+        monitor_thread.join()
+        progress(sum(counts.values()), "building")
         manifest = build(root, site, args.web_text_only)
         progress(sum(counts.values()), "interrupted" if interrupted else "complete")
     if interrupted:

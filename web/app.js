@@ -24,6 +24,21 @@ function saveDownload(text, filename, type = 'application/x-ndjson') {
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 function notice(text) { $('#load-error').hidden = false; $('#load-error').textContent = text; }
+async function pollDownload() {
+  try {
+    const response=await fetch('data/crawl-status.json', {cache:'no-store'});
+    if(!response.ok) return;
+    const status=await response.json(), box=$('#download-progress');
+    const fresh=Date.now()-Date.parse(status.updated_at)<20000;
+    const active=['running','building'].includes(status.state) && fresh;
+    const archived=(status.counts.cached || 0)+(status.counts.downloaded || 0);
+    const total=status.selected_trials || data.expected_trials;
+    const label=active ? (status.state==='building' ? '正在导出 JSONL / 更新网页' : '正在下载 Harbor 轨迹') : status.state==='complete' ? '本轮下载已结束' : '下载已停止';
+    box.hidden=false;
+    box.innerHTML=`<div class="download-heading"><strong>${active ? '<span class="loading-dot"></span> ' : ''}${label}</strong><span>${fmt(archived)} / ${fmt(total)} 条已归档</span><button class="button refresh-index">刷新网页索引 ↻</button></div><div class="download-track"><i style="width:${Math.min(100,archived/Math.max(1,total)*100)}%"></i></div><div class="download-details">${active ? `${fmt(status.downloaded_per_minute)} 条/分钟 · ${fmt(status.network_mbps)} MB/s · ${status.active_requests || 0} 个活跃请求 · 剩余 ${status.remaining ?? '—'} 条待处理${status.transfer_total_bytes ? ' · '+(status.transfer_received_bytes/1e9).toFixed(2)+' / '+(status.transfer_total_bytes/1e9).toFixed(2)+' GB' : ''}` : `本轮错误 ${status.counts.error || 0} · 源站未提供 ${status.counts.unavailable || 0}`}<span>网页索引：${fmt(data.counts.downloaded || 0)} 条${archived>(data.counts.downloaded || 0) ? ' · 新轨迹将在导出后可读' : ''}</span></div>`;
+    $('.refresh-index',box).onclick=()=>location.reload();
+  } catch { /* A static archive may intentionally have no live crawl status. */ }
+}
 function modelLabel(id) { const m=models.get(id); return m ? `${m.name} · ${m.agent}${m.effort ? ' / '+m.effort : ''}` : id; }
 function downloadName(id,task) { return `${models.get(id).name}-${tasks.get(task).name}${data.web_projection==='text_only' ? '.text' : ''}.jsonl`; }
 function options(selected) { return data.models.map(m => `<option value="${esc(m.id)}" ${m.id === selected ? 'selected' : ''}>${esc(modelLabel(m.id))}</option>`).join(''); }
@@ -71,7 +86,7 @@ function renderOverview() {
     selectedModels = [...new Set([button.dataset.compare, data.models.find(m=>m.id !== button.dataset.compare)?.id].filter(Boolean))]; setRoute();
   });
   $('#coverage-note').textContent = `本快照：${data.models.length} 个模型配置、${data.tasks.length} 道题；榜单记录 ${data.official_trials} 次运行，其中 ${data.expected_trials} 次提供公开运行列表，${data.unlisted_trials} 次未公开 trial。已归档 ${downloaded} 条轨迹；不可用 ${data.counts.unavailable || 0}，错误 ${data.counts.error || 0}，等待 ${data.counts.pending || 0}。榜单发现${data.discovery_complete ? '完整' : '未完成'}。`;
-  if(data.web_projection==='text_only') $('#coverage-note').textContent+=' 此线上快照为文本阅读版，省略内嵌图片与二进制；网页下载的 JSONL 带 text 标记。完整无损 ATIF / JSONL 保存在运行下载器的本地 dataset 目录。';
+  if(data.web_projection==='text_only') $('#coverage-note').textContent+=' 此网页快照为文本阅读版，省略内嵌图片与二进制；网页下载的 JSONL 带 text 标记。完整无损 ATIF / JSONL 保存在运行下载器的本地 dataset 目录。';
 }
 function renderTasks() {
   const q = $('#task-search').value.trim().toLowerCase();
@@ -164,7 +179,7 @@ function stepHTML(step,index,lazy) {
   return html+'</article>';
 }
 function renderSteps(container, record) {
-  let steps=record.trajectory?.steps || [];
+  let steps=(record.trajectory || record.reading_trajectory)?.steps || [];
   const mode=$('#reading-mode').value, query=$('#step-search').value.toLowerCase();
   if(!$('#show-system').checked) steps=steps.filter(s=>s.source !== 'system' && !content(s.message).startsWith('<environment_context>'));
   if(mode === 'answer') {
@@ -235,10 +250,12 @@ async function renderCompare() {
       if(version!==renderVersion) return;
       $('.download-jsonl',column).onclick=()=>saveDownload(file.text,downloadName(id,selectedTask));
       const record=file.records.find(r=>r.trial_id===run.trial_id);
-      if(!record?.trajectory){if(run.download_status === 'downloaded') throw new Error('轨迹文件中没有此 trial。');body.innerHTML=unavailable;return;}
+      const readable=record?.trajectory || record?.reading_trajectory;
+      if(!readable){if(run.download_status === 'downloaded') throw new Error('轨迹文件中没有此 trial。');body.innerHTML=unavailable;return;}
       renderSteps(body,record);
+      if(record.source_format==='nonstandard_json') body.insertAdjacentHTML('afterbegin','<p class="projection-note">源文件含未加引号的脱敏标记。此处显示阅读副本，脱敏数值留空；原始文本完整保存在本地 JSONL 的 raw_trajectory 中。</p>');
       if(!$('.task-prompt')){
-        const prompts=record.trajectory.steps.filter(s=>s.source==='user').map(s=>content(s.message)).filter(s=>!s.startsWith('<environment_context>'));
+        const prompts=readable.steps.filter(s=>s.source==='user').map(s=>content(s.message)).filter(s=>!s.startsWith('<environment_context>'));
         const prompt=prompts.sort((a,b)=>b.length-a.length)[0];
         if(prompt) $('#task-description').insertAdjacentHTML('beforeend',`<details class="task-prompt"><summary>查看原始任务说明</summary><pre>${esc(prompt)}</pre></details>`);
       }
@@ -296,7 +313,7 @@ function renderMatrix() {
 }
 async function init() {
   try{
-    const response=await fetch('data/manifest.json');
+    const response=await fetch('data/manifest.json', {cache:'no-store'});
     if(!response.ok) throw new Error('尚未生成数据索引，请先运行 python3 crawl.py crawl 或 build，再通过 HTTP 服务访问页面。');
     data=await response.json();
     models=new Map(data.models.map(m=>[m.id,m]));tasks=new Map(data.tasks.map(t=>[t.id,t]));runsByGroup=new Map();
@@ -304,13 +321,14 @@ async function init() {
     selectedModels=data.models.slice(0,2).map(m=>m.id);
     selectedTask=data.tasks.find(t=>t.name==='traffic-flux-inversion')?.id || data.tasks[0]?.id;
     $('#source-link').href=data.source_url;$('#updated').textContent='SNAPSHOT '+new Date(data.generated_at).toISOString().slice(0,10);
-    if(!data.discovery_complete || data.counts.error || data.counts.pending || data.counts.unavailable || data.unlisted_trials || data.web_projection==='text_only') notice(`${data.web_projection==='text_only' ? '线上文本阅读版：省略内嵌图片与二进制，完整 JSONL 在本地 dataset 目录。' : ''}数据覆盖：${data.counts.downloaded || 0} / ${data.expected_trials} 条可枚举轨迹。${!data.discovery_complete ? '榜单发现不完整；' : ''}${data.unlisted_trials || 0} 次榜单运行未公开 trial；${data.counts.pending || 0} 等待下载，${data.counts.error || 0} 下载错误，${data.counts.unavailable || 0} 源站未提供轨迹。`);
+    if(!data.discovery_complete || data.counts.error || data.counts.pending || data.counts.unavailable || data.unlisted_trials || data.web_projection==='text_only') notice(`${data.web_projection==='text_only' ? '网页文本阅读版：省略内嵌图片与二进制，完整 JSONL 在本地 dataset 目录。' : ''}数据覆盖：${data.counts.downloaded || 0} / ${data.expected_trials} 条可枚举轨迹。${!data.discovery_complete ? '榜单发现不完整；' : ''}${data.unlisted_trials || 0} 次榜单运行未公开 trial；${data.counts.pending || 0} 等待下载，${data.counts.error || 0} 下载错误，${data.counts.unavailable || 0} 源站未提供轨迹。`);
     renderOverview();renderCostChart();renderPairPickers();route();
     $('#task-search').oninput=renderTasks;$('#task-sort').onchange=renderTasks;$('#matrix-search').oninput=renderMatrix;
     $('#reading-mode').onchange=renderCompare;$('#show-system').onchange=renderCompare;
     let timer;$('#step-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(renderCompare,250);};
     $('#share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('#share').textContent='链接已复制 ✓';}catch{ $('#share').textContent='请复制地址栏中的完整链接'; } };
     window.addEventListener('hashchange',route);
+    pollDownload();setInterval(pollDownload,5000);
   }catch(error){notice(error.message);$('#stats').innerHTML='<div class="empty">数据尚未载入</div>';}
 }
 init();

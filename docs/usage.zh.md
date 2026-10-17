@@ -1,3 +1,28 @@
+## 当前本地工作流
+
+独立项目目录：`/Users/junxiao/code/terminal-bench-science-atlas`。其中 `dataset` 和 `dist` 复用 OpenDiscovery 下已有的数据与网页目录，不会重新下载一份。
+
+```sh
+cd /Users/junxiao/code/terminal-bench-science-atlas
+python3 crawl.py status
+# 普通轨迹：先取新条目，再重试失败条目
+python3 -u crawl.py crawl --workers 64 --checkpoint-every 0 --web-text-only
+# 大文件：先停止普通爬虫，再用字节级分块续传
+python3 accelerate.py plan
+caffeinate -i python3 -u accelerate.py fetch --workers 128
+# 查看实时日志
+ tail -f dataset/crawl-storage.log
+# 网页可在下载时更新，下载完成也会自动导出
+python3 crawl.py snapshot
+python3 crawl.py serve --port 8765
+```
+
+页面地址：<http://localhost:8765>。后台下载会周期性更新网页快照；原始文件很大时，网页索引会落后于实时归档数量，页面会分别显示。源文件含未加引号的 `[REDACTED]` 时，完整原文保存在 `raw_trajectory`，阅读副本只将被脱敏的字段留空并明确标注。
+
+GitHub/Hugging Face 均先建为私有；数据上传暂缓。后续上传命令见根目录 README。
+
+---
+
 # Science Atlas — Terminal-Bench Science dataset + analysis
 
 独立、零第三方依赖的 Harbor 公开轨迹下载器与静态分析网站。Python 3.9+；浏览器需支持 `DecompressionStream`。

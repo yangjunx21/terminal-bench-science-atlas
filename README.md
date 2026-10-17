@@ -27,6 +27,17 @@ caffeinate -i python3 -u crawl.py crawl --workers 8 --checkpoint-every 0 2>&1 | 
 
 `--checkpoint-every 0` exports at the end; raw successful cache files are saved as each request finishes. The first run discovers public leaderboard configurations. Use `--rediscover` later to refresh the leaderboard without discarding successful downloads.
 
+The crawler skips cache headers without parsing full ATIF, prioritizes new trials before known failures, and defers original-file fallbacks so slow image-heavy files do not block ordinary trajectories. Increase `--workers` up to 64 if the connection benefits from more parallel transfers; request starts remain rate limited. The website shows live speed and distinguishes downloaded cache files from its last exported reading index.
+
+For remaining large objects, stop the ordinary crawler and use resumable parallel storage ranges:
+
+```sh
+python3 accelerate.py plan
+caffeinate -i python3 -u accelerate.py fetch --workers 128
+```
+
+This reads the same public storage objects as Harbor's official CLI, using its published **anonymous publishable key** and enforcing the storage service's access rules. It requires no personal Harbor token. `plan` may run alongside a crawl; `fetch` holds the shared dataset writer lock. Interrupted ranges stay under `dataset/_parts/` and resume from their saved byte offsets. Source size, ETag and exact Content-Range are checked before appending. Complete JSON is validated with bounded memory before entering the success cache. Rerun `fetch` to resume, or `fetch --refresh-plan` to refresh missing metadata. During storage download, a fresh reading snapshot is exported periodically and again at the end. Network ranges are streamed to disk; at most two source objects are parsed concurrently even with 128 connections. Very large source files can still take substantial time; the live page reports transferred bytes as well as trajectory counts.
+
 On the original development machine, `dataset` is a local symlink to `/Users/junxiao/code/OpenDiscovery/tools/harbor-science/dataset`, reusing the existing download. The symlink and data are ignored by Git. A new clone creates its own dataset directory.
 
 ## Comparison website
@@ -36,7 +47,7 @@ python3 crawl.py build
 python3 crawl.py serve --port 8765
 ```
 
-Open http://localhost:8765. The site includes task search, model selection, run selection, aligned side-by-side trajectories, tool arguments/results, official leaderboard scores, archive coverage, and a task/model performance matrix. `dist/` is static and can be hosted on any static server. It loads only the selected task files. To create smaller web assets while keeping dataset JSONL lossless:
+Open http://localhost:8765. To update the reading snapshot during an active download, run `python3 crawl.py snapshot` in another terminal; it freezes cache files and exports a separate snapshot without pausing the crawler. The site includes task search, model selection, run selection, aligned side-by-side trajectories, tool arguments/results, official leaderboard scores, archive coverage, and a task/model performance matrix. `dist/` is static and can be hosted on any static server. It loads only the selected task files. To create smaller web assets while keeping dataset JSONL lossless:
 
 ```sh
 python3 crawl.py build --web-text-only
@@ -104,3 +115,5 @@ node --check web/app.js
 ```
 
 Code is MIT licensed. Source benchmark prompts, trajectories, canaries and media retain their upstream terms; this project does not assign them a new license.
+
+Some source files contain unquoted `[REDACTED]` tokens and are not valid JSON. These are archived exactly as text in `raw_trajectory`, with `trajectory: null`, `source_format: nonstandard_json`, and an explicit parse error. A separate `reading_trajectory` projects only unquoted redaction markers to null; quoted message text is preserved. The website labels this reading copy. No missing token counts are invented.

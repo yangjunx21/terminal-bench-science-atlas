@@ -102,6 +102,20 @@ class ArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(crawl.download(Client(),Path(directory),{"id":"t","job_id":"j"}),"downloaded")
 
+    def test_original_fallback_is_deferred_without_blocking_primary_workers(self):
+        class Client:
+            origin = "https://hub.harborframework.com"
+            paths = []
+            def request(self, path, **kwargs):
+                self.paths.append(path)
+                return '{"steps":[]}' if '/files/agent/' in path else 'null'
+        with tempfile.TemporaryDirectory() as directory:
+            client=Client();root=Path(directory);trial={"id":"t","job_id":"j"}
+            self.assertEqual(crawl.download(client,root,trial,defer_original=True),"deferred")
+            self.assertFalse((root/'_runs/t.json').exists())
+            self.assertEqual(crawl.download(client,root,trial,original_only=True),"downloaded")
+            self.assertEqual(len(client.paths),2)
+
     def test_export_lossless_multiple_runs_and_missing_scores(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)/"dataset";site=Path(directory)/"site"
@@ -120,7 +134,9 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(lines[0]["trajectory"],trajectory)
             self.assertEqual(manifest["runs"][0]["tool_calls"],1)
             self.assertIsNone(manifest["runs"][1]["reward"])
-            self.assertEqual(gzip.decompress((site/"data"/(manifest["runs"][0]["path"]+".gz")).read_bytes()),path.read_bytes())
+            original_asset=site/"data"/manifest["files"][manifest["runs"][0]["path"]]["parts"][0]
+            original_bytes=original_asset.read_bytes()
+            self.assertEqual(gzip.decompress(original_bytes),path.read_bytes())
             crawl.build(root,site)
             self.assertEqual(path.read_text().count('\n'),2)
             crawl.atomic(root/"_runs/b.json",crawl.dumps({"status":"downloaded", "trajectory":trajectory}))
@@ -131,6 +147,7 @@ class ArchiveTests(unittest.TestCase):
             self.assertGreater(len(parts),1)
             self.assertTrue(all((site/"data"/part).stat().st_size<=64 for part in parts))
             self.assertEqual(gzip.decompress(b''.join((site/"data"/part).read_bytes() for part in parts)),path.read_bytes())
+            self.assertEqual(original_asset.read_bytes(),original_bytes)
 
     def test_path_collisions_and_traversal(self):
         self.assertNotEqual(crawl.slug("A/B"),crawl.slug("A B"))

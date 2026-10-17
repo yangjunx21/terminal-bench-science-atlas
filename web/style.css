@@ -3,3 +3,7 @@
 
 nav a small{white-space:nowrap}
 .step details img{display:block;max-width:100%;height:auto;margin:10px auto}
+
+.download-progress{margin:20px 40px 0;padding:16px 20px;border:1px solid #cddfd3;border-radius:5px;background:#eff7f1;color:#426d52}.download-progress[hidden]{display:none}.download-heading{display:flex;align-items:center;gap:18px;font-size:12px}.download-heading>span{font:12px var(--mono)}.download-heading .button{margin-left:auto}.download-track{height:4px;background:#dce9df;border-radius:3px;overflow:hidden;margin:13px 0 9px}.download-track i{display:block;height:100%;background:#499671;transition:width .4s}.download-details{display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap;font-size:10px;color:#73917c}@media(max-width:760px){.download-progress{margin:15px 16px 0;padding:12px}.download-heading{flex-wrap:wrap;gap:8px}.download-heading .button{padding:4px 7px}}
+
+.projection-note{padding:10px;border:1px solid #ead4a7;background:#fffbef;color:#916e34;font-size:11px}

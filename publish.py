@@ -80,7 +80,7 @@ trajectories and flat analysis tables. Code and cross-model comparison UI:
 | Model / agent configurations | {len(manifest['models'])} |
 | Tasks | {len(manifest['tasks'])} |
 | Publicly listed trials | {manifest['listed_trials']} |
-| Original trajectories captured | {counts.get('downloaded', 0)} |
+| Source trajectories captured | {counts.get('downloaded', 0)} |
 | Download errors | {counts.get('error', 0)} |
 | Source returned no trajectory | {counts.get('unavailable', 0)} |
 | Not downloaded yet | {counts.get('pending', 0)} |
@@ -97,7 +97,9 @@ snapshot; during upload, a raw object listed in the index may not be on the Hub 
 - `analysis/tasks.csv`: per-task counts and observed scored-run success rates.
 - `trajectories/models/<model>/<configuration-id>/<task>.jsonl.gz`: lossless JSONL,
   one full run per line, including repeated runs. `trajectory` is the unmodified
-  original ATIF object, or null with an explicit download state.
+  original ATIF object when valid, or null with an explicit download state.
+  Nonstandard source JSON is preserved exactly in `raw_trajectory`; a separately
+  labeled `reading_trajectory` may project unquoted `[REDACTED]` markers to null.
 - `manifest.json`, `catalog.json`, `inventory.json`: provenance and file checksums.
 
 The Dataset Viewer reads only the explicitly configured flat CSV tables. It does
@@ -165,7 +167,7 @@ def prepare(root, stage, repo=DEFAULT_REPO):
             target = stage / relative
             versions = [(t["id"], (frozen / (t["id"] + ".json")).stat().st_mtime_ns, (frozen / (t["id"] + ".json")).stat().st_size)
                         if (frozen / (t["id"] + ".json")).exists() else (t["id"], None) for t in trials]
-            fingerprint = hashlib.sha256(crawl.dumps([1, model, trials, versions]).encode()).hexdigest()
+            fingerprint = hashlib.sha256(crawl.dumps([2, model, trials, versions]).encode()).hexdigest()
             old = previous.get(relative)
             if old and old["fingerprint"] == fingerprint and target.exists():
                 batch, descriptor = old["rows"], old["file"]
@@ -188,11 +190,16 @@ def prepare(root, stage, repo=DEFAULT_REPO):
                                 "download_status": result["status"], "download_error": result.get("error"),
                                 "trial": trial, "trajectory": trajectory,
                             }
+                            for key in ("raw_trajectory","reading_trajectory","source_format","parse_error","source_sha256","source_bytes","download_transport"):
+                                if key in result:
+                                    record[key] = result[key]
                             output.write((crawl.dumps(record) + "\n").encode())
-                            steps = trajectory.get("steps", []) if trajectory else []
+                            reading = trajectory or result.get("reading_trajectory")
+                            steps = reading.get("steps", []) if reading else []
                             batch.append({
                                 "trial_id": trial["id"], "model_id": model_id, "model": model["name"], "agent": model["agent"],
                                 "reasoning_effort": model["effort"], "task_name": task, "job_id": trial["job_id"],
+                                "source_format":result.get("source_format","json"), "parse_error":result.get("parse_error"),
                                 "reward": trial.get("reward"), "is_scored": int(trial.get("is_scored", True) is not False),
                                 "status": trial.get("status"), "download_status": result["status"], "download_error": result.get("error"),
                                 "input_tokens": trial.get("input_tokens"), "output_tokens": trial.get("output_tokens"),

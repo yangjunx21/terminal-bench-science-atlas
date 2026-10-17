@@ -7,16 +7,19 @@ import json
 from pathlib import Path
 
 
-def summarize(path, group="model_id"):
+def summarize(path, group="model_id", models=None):
+    models=models or {}
     groups = defaultdict(lambda: {"listed": 0, "downloaded": 0, "scored": 0, "passed": 0})
     with path.open(newline="", encoding="utf-8") as stream:
         for row in csv.DictReader(stream):
             item = groups[row[group]]
             if group == "model_id":
-                item.update(model=row["model"], agent=row["agent"], reasoning_effort=row["reasoning_effort"])
+                model=models.get(row["model_id"],{})
+                item.update(model=row.get("model",model.get("name",row["model_id"])), agent=row.get("agent",model.get("agent","")), reasoning_effort=row.get("reasoning_effort",model.get("effort","")))
             item["listed"] += 1
             item["downloaded"] += row["download_status"] == "downloaded"
-            if row["is_scored"] == "1" and row["reward"] != "":
+            scored=row.get("is_scored",row.get("scored","True")).lower() in ("1","true")
+            if scored and row["reward"] != "":
                 reward = float(row["reward"])
                 item["scored"] += 1
                 item["passed"] += reward == 1
@@ -26,10 +29,14 @@ def summarize(path, group="model_id"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trials", type=Path, default=Path(__file__).resolve().parent / "hub-export/analysis/trials.csv")
+    here=Path(__file__).resolve().parent
+    local=here/"dist/data/runs.csv"
+    parser.add_argument("--trials", type=Path, default=local if local.exists() else here/"hub-export/analysis/trials.csv")
+    parser.add_argument("--catalog",type=Path,default=here/"dataset/catalog.json")
     parser.add_argument("--group", choices=["model_id", "task_name"], default="model_id")
     args = parser.parse_args()
-    print(json.dumps(summarize(args.trials, args.group), ensure_ascii=False, indent=2))
+    models={m["id"]:m for m in json.loads(args.catalog.read_text())["models"]} if args.catalog.exists() else {}
+    print(json.dumps(summarize(args.trials, args.group, models), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
