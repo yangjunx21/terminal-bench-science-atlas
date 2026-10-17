@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ET
 
 
 def completion_payload(etags, digest):
@@ -40,6 +41,7 @@ class MultipartUploader:
 
     def put(self, source, offset, size, url, part_name, require_etag=True):
         path = Path(self.temporary.name) / part_name
+        response_path = path.with_name(path.name + '.response')
         try:
             with source.open('rb') as original, path.open('wb') as destination:
                 original.seek(offset)
@@ -51,12 +53,12 @@ class MultipartUploader:
                     destination.write(chunk)
                     remaining -= len(chunk)
             config = 'url = ' + json.dumps(url) + '\n'
-            for attempt in range(1, 5):
+            for attempt in range(1, 9):
                 result = subprocess.run([
                     '/usr/bin/curl', '--config', '-', '--upload-file', str(path),
-                    '--silent', '--show-error', '--fail', '--location', '--max-redirs', '10',
+                    '--silent', '--show-error', '--fail-with-body', '--location', '--max-redirs', '10',
                     '--proto', '=https', '--proto-redir', '=https', '--connect-timeout', '20',
-                    '--max-time', '1800', '--dump-header', '-', '--output', '/dev/null',
+                    '--max-time', '1800', '--dump-header', '-', '--output', str(response_path),
                     '--write-out', '\nTB_BYTES=%{size_upload}\nTB_HTTP=%{http_code}\n',
                 ], input=config, text=True, capture_output=True)
                 if result.returncode == 0:
@@ -73,10 +75,16 @@ class MultipartUploader:
                                 self.last_report = now
                         return etags[-1].strip() if etags else None
                 statuses = re.findall(r'TB_HTTP=(\d+)', result.stdout)
-                if statuses and int(statuses[-1]) in (400, 401, 403, 404):
+                server_code = None
+                try:
+                    server_code = ET.fromstring(response_path.read_bytes()).findtext('Code')
+                except (OSError, ET.ParseError):
+                    pass
+                if statuses and (int(statuses[-1]) in (401, 403, 404) or
+                                 int(statuses[-1]) == 400 and server_code not in ('RequestTimeout', 'IncompleteBody')):
                     break  # Refresh the upload plan instead of retrying an expired URL.
-                if attempt < 4:
-                    time.sleep(attempt * 2)
+                if attempt < 8:
+                    time.sleep(min(15, attempt * 2))
             statuses = re.findall(r'TB_HTTP=(\d+)', result.stdout)
             sent = re.findall(r'TB_BYTES=(\d+)', result.stdout)
             detail = f'curl={result.returncode}, http={statuses[-1] if statuses else "unknown"}, sent={sent[-1] if sent else 0}/{size}'
@@ -84,6 +92,7 @@ class MultipartUploader:
             raise RuntimeError('Multipart part failed: ' + detail)
         finally:
             path.unlink(missing_ok=True)
+            response_path.unlink(missing_ok=True)
 
     def upload(self, source, descriptor, repo):
         if descriptor['bytes'] > 64 * 1024 * 1024:

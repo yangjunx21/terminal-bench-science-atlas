@@ -40,7 +40,7 @@ def remote_matches(remote, descriptor, local):
     return digest.hexdigest() == getattr(remote, 'blob_id', None)
 
 
-def upload(stage, repo, public=False, multipart_workers=128):
+def upload(stage, repo, public=False, multipart_workers=32):
     # Set before importing the SDK. The Xet path stalled on this connection.
     os.environ['HF_HUB_DISABLE_XET'] = '1'
     os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
@@ -108,7 +108,7 @@ def upload(stage, repo, public=False, multipart_workers=128):
                 remaining = sorted(pending, key=lambda item: item['bytes'], reverse=True)
                 for attempt in range(1, 4):
                     failed, ready = [], []
-                    with ThreadPoolExecutor(max_workers=8) as pool:
+                    with ThreadPoolExecutor(max_workers=32) as pool:
                         futures = {pool.submit(transfer.upload, stage/item['path'], item, repo): item for item in remaining}
                         for future in as_completed(futures):
                             item = futures[future]
@@ -152,7 +152,7 @@ def main():
     parser.add_argument('--repo', required=True)
     parser.add_argument('--public', action='store_true')
     parser.add_argument('--parent-lock-held', action='store_true')
-    parser.add_argument('--multipart-workers',type=int,default=128,help='Parallel multipart requests; 0 selects the original SDK uploader')
+    parser.add_argument('--multipart-workers',type=int,default=32,help='Parallel multipart requests; 0 selects the original SDK uploader')
     args = parser.parse_args()
     if args.parent_lock_held:
         upload(args.stage.resolve(), args.repo, args.public,args.multipart_workers)

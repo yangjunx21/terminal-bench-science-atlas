@@ -52,5 +52,26 @@ class MultipartTests(unittest.TestCase):
                 self.assertEqual(uploader.received,4)
             finally:uploader.close()
 
+    def test_transient_s3_timeout_retries_only_the_same_part(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'source';source.write_bytes(b'1234')
+            uploader=MultipartUploader(workers=1)
+            calls=[]
+            def run(command,**kwargs):
+                self.assertEqual(Path(command[command.index('--upload-file')+1]).read_bytes(),b'1234')
+                calls.append(command)
+                response=Path(command[command.index('--output')+1])
+                if len(calls)==1:
+                    response.write_text('<Error><Code>RequestTimeout</Code></Error>')
+                    return SimpleNamespace(returncode=22,stdout='TB_BYTES=2\nTB_HTTP=400\n')
+                response.write_bytes(b'')
+                return SimpleNamespace(returncode=0,stdout='ETag: "done"\nTB_BYTES=4\nTB_HTTP=200\n')
+            try:
+                with patch('hf_multipart.subprocess.run',side_effect=run),patch('hf_multipart.time.sleep'):
+                    self.assertEqual(uploader.put(source,0,4,'https://example.test','part'),'"done"')
+                self.assertEqual(len(calls),2)
+                self.assertEqual(uploader.received,4)
+            finally:uploader.close()
+
 
 if __name__=='__main__':unittest.main()

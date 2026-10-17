@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Check the public site, repository, and dataset without any login or access token."""
 import argparse
+import csv
 import gzip
 import hashlib
 import json
+import io
 from pathlib import Path
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -43,6 +45,9 @@ def verify(site):
     assert code['private'] is False and hub['private'] is False
     upload = read_json(HF_FILES + 'upload-status.json')
     inventory = read_json(HF_FILES + 'inventory.json')
+    tables = {name: len(list(csv.DictReader(io.StringIO(fetch(HF_FILES + 'analysis/' + name + '.csv').decode()))))
+              for name in ('trials', 'models', 'tasks')}
+    assert tables == {'trials': len(manifest['runs']), 'models': len(manifest['models']), 'tasks': len(manifest['tasks'])}
     present = {row['rfilename'] for row in hub['siblings']}
     candidate = min((row for row in inventory if row['path'] in present and 20000 < row['bytes'] < 100000), key=lambda row: row['bytes'])
     archive = fetch(HF_FILES + candidate['path'])
@@ -51,6 +56,7 @@ def verify(site):
               'site_counts': manifest['counts'], 'github_public': True, 'hf_public': True,
               'hf_raw_files': sum(path.endswith('.jsonl.gz') for path in present),
               'hf_raw_sample_sha256_ok': True, 'hf_upload': upload}
+    result['anonymous_analysis_rows'] = tables
     return result
 
 

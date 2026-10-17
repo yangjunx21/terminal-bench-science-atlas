@@ -81,7 +81,7 @@ The stage writer lock prevents overlapping packaging/uploads. The final prepared
 
 ```sh
 uvx --from huggingface_hub python upload_http.py --stage hub-export \
-  --repo yangjunxiao2021/terminal-bench-science-trajectories --public --multipart-workers 128
+  --repo yangjunxiao2021/terminal-bench-science-trajectories --public --multipart-workers 32
 ```
 
 On the original development machine a background uploader is already running with a sleep inhibitor; its log is `dataset/hf-sync-public.log`. Do not start a duplicate. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.

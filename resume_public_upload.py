@@ -19,7 +19,7 @@ def website_push_active():
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--wait-for-site',action='store_true')
-    parser.add_argument('--workers',type=int,default=128)
+    parser.add_argument('--workers',type=int,default=32)
     args=parser.parse_args()
     stop = HERE/'dataset/upload.stop'
     print('Continuing the public archive upload.', flush=True)
