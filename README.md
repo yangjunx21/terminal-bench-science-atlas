@@ -76,7 +76,7 @@ For a one-shot background sync that uploads the prepared capture now, waits for 
 python3 -u sync_dataset.py
 ```
 
-On the original development machine this is already running with a sleep inhibitor; progress is in `dataset/hf-sync.log`. Do not start a duplicate. The stage writer lock prevents overlapping packaging/uploads.
+On the original development machine this is already running with a sleep inhibitor; progress is in `dataset/hf-sync-http.log`. Do not start a duplicate. The stage writer lock prevents overlapping packaging/uploads.
 
 The replacement HTTP uploader logs to `dataset/hf-sync-http.log`. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
 
