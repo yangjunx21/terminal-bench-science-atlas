@@ -6,7 +6,7 @@ Archive public [Harbor Terminal-Bench Science](https://hub.harborframework.com/d
 - Dataset: https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories
 - [中文使用说明](docs/usage.zh.md)
 
-Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs the `hf` CLI or `uvx`. Both repositories were initially created private.
+Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs `uvx` or `huggingface_hub` installed in the active Python environment. Both repositories were initially created private.
 
 ## Download manually
 
@@ -68,6 +68,8 @@ python3 publish.py upload
 
 The uploader uses the existing local HF login; do not put access tokens in code or Git. It creates a **private** dataset by default. Existing repository visibility is preserved. Use `--repo OWNER/NAME` for a different dataset. Upload interrupted files by rerunning the same upload command. After more Harbor downloads, rerun `prepare` and `upload`; unchanged task groups are reused.
 
+Uploads default to HTTP/LFS because Xet uploads stalled on the development connection. Raw archives are committed in batches of at most 20 files / 64 MiB (a larger individual archive is committed alone). Already matching remote content hashes are skipped, each batch updates `upload-status.json`, and all remote archive hashes/sizes are verified before marking the capture upload complete. `--transport xet` retains the CLI transport as an alternative.
+
 For a one-shot background sync that uploads the prepared capture now, waits for the active downloader/retry manager, then prepares and uploads the final local capture:
 
 ```sh
@@ -75,6 +77,21 @@ python3 -u sync_dataset.py
 ```
 
 On the original development machine this is already running with a sleep inhibitor; progress is in `dataset/hf-sync.log`. Do not start a duplicate. The stage writer lock prevents overlapping packaging/uploads.
+
+The replacement HTTP uploader logs to `dataset/hf-sync-http.log`. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
+
+## Access and sharing
+
+Both repositories remain private unless the owner explicitly changes their visibility. A URL alone does not grant access. Invite collaborators for the private GitHub repository; for private Hugging Face collaboration, use an organization with authorized members. Public sharing requires changing visibility. The local website binds only to `127.0.0.1`; it must be deployed separately for others to browse remotely.
+
+Once the dataset upload is complete and the viewer has access, sign in with their own HF account and download the archive:
+
+```sh
+hf auth login
+hf download yangjunxiao2021/terminal-bench-science-trajectories --type dataset --local-dir tb-science
+```
+
+Small `analysis/*.csv` tables can be downloaded independently before the full raw upload completes.
 
 `prepare` is offline and freezes the atomically written cache files before packaging, so a separate manual crawl may continue. Its output is `hub-export/`:
 

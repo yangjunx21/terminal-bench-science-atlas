@@ -23,6 +23,10 @@ GitHub：[yangjunx21/terminal-bench-science-atlas](https://github.com/yangjunx21
 
 阅读器默认显示 Markdown／公式：标题、列表、表格、代码高亮、行内 `$...$` / `\(...\)` 和独立 `$$...$$` / `\[...\]` 公式；代码与独立公式均有复制按钮。工具日志保持原样，也可在“文本显示”中切回原始文本。相关库及字体已随仓库保存，本地排版无需 CDN。
 
+HF 原来的 Xet 传输曾卡住，现默认使用 HTTP/LFS 小批次上传；替代进程日志为 `dataset/hf-sync-http.log`。`hub-export/upload-status.json` 中的 `confirmed_files` 表示已提交的文件数，只有远端全部文件的大小与内容哈希验证通过后才会写为 `complete`。
+
+两个仓库均为私有，单独发送链接不会授权别人访问。GitHub 可邀请协作者；HF 私有协作需放在组织下并授权成员，或明确选择公开。`localhost:8765` 当前只绑定本机，别人浏览网页还需单独部署。
+
 ---
 
 # TB Science 轨迹分析

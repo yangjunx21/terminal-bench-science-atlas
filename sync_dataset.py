@@ -27,20 +27,27 @@ def download_active(root):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo',default=publish.DEFAULT_REPO)
+    parser.add_argument('--wait-for-stage',action='store_true',help='Wait for an existing snapshot packager before acquiring the stage lock')
     args=parser.parse_args()
     here=Path(__file__).resolve().parent
     root,stage=(here/'dataset').resolve(),here/'hub-export'
+    if args.wait_for_stage and crawl.writer_active(stage):
+        print('Waiting for current snapshot packaging to finish.',flush=True)
+        while crawl.writer_active(stage):
+            time.sleep(5)
     with crawl.dataset_lock(stage):
-        if not (stage/'manifest.json').exists():
-            publish.prepare(root,stage,args.repo)
-        print('Uploading prepared partial capture.',flush=True)
+        publish.prepare(root,stage,args.repo)
+        snapshot=json.loads((stage/'manifest.json').read_text())['created_at']
+        print('Uploading current local capture.',flush=True)
         publish.upload(stage,args.repo)
         print('Initial snapshot uploaded; waiting for local download and retry passes.',flush=True)
         while download_active(root):
             time.sleep(20)
-        print('Preparing and uploading the final local capture.',flush=True)
-        publish.prepare(root,stage,args.repo)
-        publish.upload(stage,args.repo)
+        latest=json.loads((root/'manifest.json').read_text()).get('generated_at','')
+        if latest > snapshot:
+            print('Preparing and uploading the final local capture.',flush=True)
+            publish.prepare(root,stage,args.repo)
+            publish.upload(stage,args.repo)
     return 0
 
 

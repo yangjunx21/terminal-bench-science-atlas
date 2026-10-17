@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import crawl
@@ -266,7 +267,17 @@ def hf_command():
     raise RuntimeError("Install the Hugging Face CLI (hf) or uv before uploading. See README.md.")
 
 
-def upload(stage, repo, public=False, metadata_only=False):
+def upload(stage, repo, public=False, metadata_only=False, transport='http'):
+    if transport == 'http' and not metadata_only:
+        if shutil.which('uvx'):
+            runtime = [shutil.which('uvx'), '--from', 'huggingface_hub', 'python']
+        else:
+            runtime = [sys.executable]
+        command = runtime + [str(HERE / 'upload_http.py'), '--stage', str(stage), '--repo', repo, '--parent-lock-held']
+        if public:
+            command.append('--public')
+        subprocess.run(command, check=True)
+        return
     base = hf_command()
     subprocess.run(base + ["repos", "create", repo, "--type", "dataset", "--exist-ok", "--public" if public else "--private"], check=True)
     manifest = json.loads((stage / "manifest.json").read_text())
@@ -299,13 +310,14 @@ def main(argv=None):
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--public", action="store_true", help="Create a public dataset; default private. Existing visibility is preserved.")
     parser.add_argument("--metadata-only", action="store_true", help="Upload only dataset card, provenance and analysis tables")
+    parser.add_argument('--transport', choices=['http', 'xet'], default='http', help='HTTP uses bounded, verified, resumable commits')
     args = parser.parse_args(argv)
     stage = args.stage.resolve()
     with crawl.dataset_lock(stage):
         if args.command == "prepare":
             prepare(args.data.resolve(), stage, args.repo)
         else:
-            upload(stage, args.repo, args.public, args.metadata_only)
+            upload(stage, args.repo, args.public, args.metadata_only, args.transport)
     return 0
 
 
