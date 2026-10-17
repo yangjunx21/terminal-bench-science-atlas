@@ -31,7 +31,7 @@ class MultipartUploader:
         self.connections = threading.Semaphore(workers)
         self.temporary = tempfile.TemporaryDirectory(prefix='tb-science-upload-parts-')
         self.lock = threading.Lock()
-        self.large_gate = threading.Semaphore(3)
+        self.large_gate = threading.Semaphore(min(16, workers))
         self.received = 0
         self.started = time.monotonic()
         self.last_report = self.started
