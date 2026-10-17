@@ -527,6 +527,8 @@ def _build(root, site, web_text_only=False):
     for path in (HERE / "web").iterdir():
         if path.is_file():
             shutil.copy2(path, site / path.name)
+        elif path.is_dir():
+            shutil.copytree(path, site / path.name, dirs_exist_ok=True)
     # A static-site CSV inventory is convenient for pandas / spreadsheets.
     import csv
     with (site / "data" / "runs.csv.tmp").open("w", newline="", encoding="utf-8") as f:

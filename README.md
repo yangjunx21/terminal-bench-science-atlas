@@ -6,7 +6,7 @@ Archive public [Harbor Terminal-Bench Science](https://hub.harborframework.com/d
 - Dataset: https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories
 - [中文使用说明](docs/usage.zh.md)
 
-Python 3.9+ on macOS/Linux; downloading, packaging, analysis and the website use only the standard library. Hugging Face upload additionally needs the `hf` CLI or `uvx`. Both repositories were initially created private.
+Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs the `hf` CLI or `uvx`. Both repositories were initially created private.
 
 ## Download manually
 
@@ -55,6 +55,8 @@ python3 crawl.py build --web-text-only
 
 The page labels this text projection explicitly. Embedded binary image payloads are omitted only from web copies. Original downloads and full dataset JSONL remain unchanged.
 
+Task prompts, agent messages and exposed reasoning support Markdown headings, lists, tables, fenced code and TeX (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`). Code and display formulas have copy buttons. The “原始文本” selector shows source text; tool arguments and observations always preserve literal text. Raw HTML and unsafe TeX commands are disabled. Browser assets and their licenses/checksums live in `web/vendor/`.
+
 ## Prepare and upload a Hugging Face snapshot
 
 ```sh
@@ -65,6 +67,14 @@ python3 publish.py upload
 ```
 
 The uploader uses the existing local HF login; do not put access tokens in code or Git. It creates a **private** dataset by default. Existing repository visibility is preserved. Use `--repo OWNER/NAME` for a different dataset. Upload interrupted files by rerunning the same upload command. After more Harbor downloads, rerun `prepare` and `upload`; unchanged task groups are reused.
+
+For a one-shot background sync that uploads the prepared capture now, waits for the active downloader/retry manager, then prepares and uploads the final local capture:
+
+```sh
+python3 -u sync_dataset.py
+```
+
+On the original development machine this is already running with a sleep inhibitor; progress is in `dataset/hf-sync.log`. Do not start a duplicate. The stage writer lock prevents overlapping packaging/uploads.
 
 `prepare` is offline and freezes the atomically written cache files before packaging, so a separate manual crawl may continue. Its output is `hub-export/`:
 
@@ -111,8 +121,12 @@ Raw download examples and provenance are in the dataset card. The initial snapsh
 
 ```sh
 python3 -m unittest discover -v
-node --check web/app.js
+npm ci
+npm test
+npm run check
 ```
+
+Node.js 24+ is needed only for renderer tests and `npm run vendor` (rebuild pinned browser assets); normal download/serve does not need Node or npm.
 
 Code is MIT licensed. Source benchmark prompts, trajectories, canaries and media retain their upstream terms; this project does not assign them a new license.
 

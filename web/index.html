@@ -4,7 +4,16 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Terminal-Bench Science 公开评测轨迹数据集：按题目横向比较模型、工具调用、运行成本与成功率。">
   <title>Science Atlas · Terminal-Bench trajectories</title>
-  <link rel="stylesheet" href="style.css"><script src="app.js" defer></script>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="vendor/texmath/texmath.css">
+  <link rel="stylesheet" href="vendor/highlight/github.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/markdown-it/markdown-it.min.js" defer></script>
+  <script src="vendor/katex/katex.min.js" defer></script>
+  <script src="vendor/texmath/texmath.js" defer></script>
+  <script src="vendor/dompurify/purify.min.js" defer></script>
+  <script src="vendor/highlight/highlight.min.js" defer></script>
+  <script src="render.js" defer></script><script src="app.js" defer></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -38,7 +47,7 @@
         <aside class="task-panel"><div class="task-panel-head"><b>问题列表</b><span id="task-count"></span></div><label class="search"><span>⌕</span><input id="task-search" type="search" placeholder="搜索题目名称…" aria-label="搜索题目"></label><select id="task-sort" aria-label="题目排序"><option value="name">按名称排序</option><option value="hard">先看低通过率</option><option value="disagree">先看模型分歧</option></select><div id="task-list"></div></aside>
         <div class="compare-main"><div class="task-title"><span class="pill">SCIENTIFIC TASK</span><h2 id="selected-task"></h2><div id="task-description"></div></div>
           <div id="model-picker" class="model-picker"></div>
-          <div class="reading-toolbar"><div><label>阅读模式 <select id="reading-mode"><option value="all">完整过程</option><option value="answer">最终回复</option><option value="tools">工具调用</option><option value="reasoning">推理 / Agent 消息</option></select></label><label><input id="show-system" type="checkbox"> 系统 / 环境提示</label><label><input id="sync-scroll" type="checkbox" checked> 同步滚动</label></div><label class="search"><span>⌕</span><input id="step-search" type="search" placeholder="搜索当前轨迹…" aria-label="搜索轨迹内容"></label></div>
+          <div class="reading-toolbar"><div><label>阅读模式 <select id="reading-mode"><option value="all">完整过程</option><option value="answer">最终回复</option><option value="tools">工具调用</option><option value="reasoning">推理 / Agent 消息</option></select></label><label>文本显示 <select id="message-format"><option value="rendered">Markdown / 公式</option><option value="source">原始文本</option></select></label><label><input id="show-system" type="checkbox"> 系统 / 环境提示</label><label><input id="sync-scroll" type="checkbox" checked> 同步滚动</label></div><label class="search"><span>⌕</span><input id="step-search" type="search" placeholder="搜索当前轨迹…" aria-label="搜索轨迹内容"></label></div>
           <div id="compare-columns" class="compare-columns"></div>
         </div>
       </div>

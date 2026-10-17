@@ -141,9 +141,12 @@ function content(value) {
   if(Array.isArray(value)) return value.map(part=>part.type === 'image' ? `[image: ${part.source?.path || part.image_url?.url || 'see raw ATIF'}]` : part.text || content(part.content) || JSON.stringify(part,null,2)).join('\n');
   return JSON.stringify(value,null,2);
 }
-function details(title, value, lazy, structured=false) {
+function details(title, value, lazy, structured=false, markdown=false) {
   const id=lazy.length;lazy.push(value);
-  return `<details data-lazy="${id}" ${structured ? 'data-structured="1"' : ''}><summary>${esc(title)}</summary></details>`;
+  return `<details data-lazy="${id}" ${structured ? 'data-structured="1"' : ''} ${markdown ? 'data-markdown="1"' : ''}><summary>${esc(title)}</summary></details>`;
+}
+function messageHTML(text) {
+  return $('#message-format').value==='source' ? `<pre class="message-source">${esc(text)}</pre>` : `<div class="markdown-body">${ScienceMarkdown.html(text)}</div>`;
 }
 function observationBlocks(value, blocks=[], depth=0) {
   if(depth>40 || value==null) return blocks;
@@ -160,19 +163,22 @@ function observationBlocks(value, blocks=[], depth=0) {
   return blocks;
 }
 function appendLongText(parent,text) {
-  const pre=document.createElement('pre');pre.className='code';pre.textContent=text.slice(0,60000);parent.append(pre);
-  if(text.length>60000){const button=document.createElement('button');button.className='button';button.textContent=`显示完整内容 · ${fmt(text.length)} characters`;button.onclick=()=>{pre.textContent=text;button.remove();};parent.append(button);}
+  const frame=document.createElement('div');frame.className='code-frame';
+  frame.innerHTML='<div class="code-toolbar"><span>原始字段 / 工具输出</span><button type="button" class="code-copy">复制代码</button></div><pre class="code"><code></code></pre>';
+  const code=$('code',frame);code.textContent=text.slice(0,60000);parent.append(frame);
+  ScienceMarkdown.attachCopy($('.code-copy',frame),()=>text);
+  if(text.length>60000){const button=document.createElement('button');button.className='button';button.textContent=`显示完整内容 · ${fmt(text.length)} characters`;button.onclick=()=>{code.textContent=text;button.remove();};parent.append(button);}
 }
 function stepHTML(step,index,lazy) {
   const tools=step.tool_calls || [], observation=step.observation;
   let html=`<article class="step"><div class="step-title"><strong>${esc((step.source || 'step').toUpperCase())}</strong><span>#${esc(step.step_id ?? index+1)} ${esc(step.timestamp ? new Date(step.timestamp).toLocaleTimeString('en-GB',{timeZone:'UTC'})+' UTC' : '')}</span></div>`;
   if(step.message){
     const message=content(step.message);
-    html+=`<pre>${esc(message.slice(0,20000))}${message.length>20000 ? '\n…' : ''}</pre>`;
-    if(message.length>20000) html+=details('展开完整消息 · '+fmt(message.length)+' characters',step.message,lazy);
+    html+=messageHTML(message.slice(0,20000));
+    if(message.length>20000) html+=details('展开完整消息 · '+fmt(message.length)+' characters',step.message,lazy,false,true);
   }
   const reasoning=step.reasoning_content || step.reasoning || step.extra?.reasoning;
-  if(reasoning) html+=details('REASONING',reasoning,lazy);
+  if(reasoning) html+=details('REASONING',reasoning,lazy,false,true);
   for(const tool of tools) html+=details('↳ '+(tool.function_name || tool.function?.name || 'Tool call'),tool.arguments ?? tool.function?.arguments ?? tool,lazy);
   if(observation) html+=details('↳ OBSERVATION / 工具返回', observation,lazy,true);
   html+=details(data.web_projection==='text_only' ? 'RAW STEP · 文本视图字段（已省略二进制）' : 'RAW STEP · 完整原始字段',step,lazy);
@@ -195,11 +201,15 @@ function renderSteps(container, record) {
     $('.load-more',container)?.remove();
     const chunk=steps.slice(offset,offset+80); offset+=chunk.length;
     container.insertAdjacentHTML('beforeend',chunk.map((s,i)=>stepHTML(s,offset-chunk.length+i,lazy)).join(''));
+    ScienceMarkdown.bind(container);
     $$('details[data-lazy]',container).forEach(detail=>{
       if(detail.dataset.bound) return;detail.dataset.bound='1';
       detail.ontoggle=()=>{
         if(!detail.open || detail.dataset.loaded) return;detail.dataset.loaded='1';
         const value=lazy[Number(detail.dataset.lazy)],blocks=detail.dataset.structured ? observationBlocks(value) : [];
+        if(detail.dataset.markdown && $('#message-format').value!=='source'){
+          ScienceMarkdown.append(detail,content(value));return;
+        }
         if(blocks.length){for(const block of blocks){
           if(block.type==='text') appendLongText(detail,block.text);
           else {const img=document.createElement('img');img.alt='Image from original trajectory';img.loading='lazy';img.src=`data:${block.mime};base64,${block.base64}`;detail.append(img);}
@@ -257,7 +267,11 @@ async function renderCompare() {
       if(!$('.task-prompt')){
         const prompts=readable.steps.filter(s=>s.source==='user').map(s=>content(s.message)).filter(s=>!s.startsWith('<environment_context>'));
         const prompt=prompts.sort((a,b)=>b.length-a.length)[0];
-        if(prompt) $('#task-description').insertAdjacentHTML('beforeend',`<details class="task-prompt"><summary>查看原始任务说明</summary><pre>${esc(prompt)}</pre></details>`);
+        if(prompt){
+          const details=document.createElement('details');details.className='task-prompt';
+          details.innerHTML='<summary>查看原始任务说明</summary>';$('#task-description').append(details);
+          ScienceMarkdown.append(details,prompt);
+        }
       }
     } catch(error){if(version===renderVersion) body.innerHTML=`<div class="empty"><b>读取失败</b>${esc(error.message)}</div>`;}};
     if((data.files?.[run.path]?.raw_bytes || 0)>50*1024*1024){
@@ -325,6 +339,7 @@ async function init() {
     renderOverview();renderCostChart();renderPairPickers();route();
     $('#task-search').oninput=renderTasks;$('#task-sort').onchange=renderTasks;$('#matrix-search').oninput=renderMatrix;
     $('#reading-mode').onchange=renderCompare;$('#show-system').onchange=renderCompare;
+    $('#message-format').onchange=renderCompare;
     let timer;$('#step-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(renderCompare,250);};
     $('#share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('#share').textContent='链接已复制 ✓';}catch{ $('#share').textContent='请复制地址栏中的完整链接'; } };
     window.addEventListener('hashchange',route);

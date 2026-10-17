@@ -19,13 +19,15 @@ python3 crawl.py serve --port 8765
 
 页面地址：<http://localhost:8765>。后台下载会周期性更新网页快照；原始文件很大时，网页索引会落后于实时归档数量，页面会分别显示。源文件含未加引号的 `[REDACTED]` 时，完整原文保存在 `raw_trajectory`，阅读副本只将被脱敏的字段留空并明确标注。
 
-GitHub/Hugging Face 均先建为私有；数据上传暂缓。后续上传命令见根目录 README。
+GitHub：[yangjunx21/terminal-bench-science-atlas](https://github.com/yangjunx21/terminal-bench-science-atlas)，Hugging Face：[yangjunxiao2021/terminal-bench-science-trajectories](https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories)，均保持私有。HF 上传由 `sync_dataset.py` 执行：先上传已打包快照，等待下载和重试结束，再打包并增量同步。开发机已有后台进程，日志为 `dataset/hf-sync.log`，不要重复启动；中断后可重跑。单独准备和上传命令为 `python3 publish.py prepare`、`python3 publish.py upload`。
+
+阅读器默认显示 Markdown／公式：标题、列表、表格、代码高亮、行内 `$...$` / `\(...\)` 和独立 `$$...$$` / `\[...\]` 公式；代码与独立公式均有复制按钮。工具日志保持原样，也可在“文本显示”中切回原始文本。相关库及字体已随仓库保存，本地排版无需 CDN。
 
 ---
 
 # Science Atlas — Terminal-Bench Science dataset + analysis
 
-独立、零第三方依赖的 Harbor 公开轨迹下载器与静态分析网站。Python 3.9+；浏览器需支持 `DecompressionStream`。
+独立的 Harbor 公开轨迹下载器与静态分析网站。下载和本地服务只用 Python 标准库（3.9+）；浏览器需支持 `DecompressionStream`，Markdown／公式依赖已打包在本地。Node.js 24+ 仅用于前端测试或重建依赖资源。
 
 ```bash
 cd terminal-bench-science-atlas
