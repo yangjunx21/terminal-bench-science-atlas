@@ -8,7 +8,7 @@ const money = x => number(x) ? '$' + x.toLocaleString('en', {maximumFractionDigi
 const percent = x => number(x) ? (x * 100).toFixed(1) + '%' : '—';
 const time = x => number(x) ? x >= 3600 ? (x / 3600).toFixed(1) + 'h' : Math.round(x / 60) + 'm' : '—';
 let data, models, tasks, runsByGroup, selectedModels = [], selectedTask, selectedRuns = new Map();
-let renderVersion = 0, currentView = 'dataset', syncing = false;
+let renderVersion = 0, currentView = 'compare', syncing = false;
 const trajectoryCache = new Map();
 
 function group(model, task) { return runsByGroup.get(model + '\n' + task) || []; }
@@ -35,7 +35,7 @@ async function pollDownload() {
     const total=status.selected_trials || data.expected_trials;
     const label=active ? (status.state==='building' ? '正在导出 JSONL / 更新网页' : '正在下载 Harbor 轨迹') : status.state==='complete' ? '本轮下载已结束' : '下载已停止';
     box.hidden=false;
-    box.innerHTML=`<div class="download-heading"><strong>${active ? '<span class="loading-dot"></span> ' : ''}${label}</strong><span>${fmt(archived)} / ${fmt(total)} 条已归档</span><button class="button refresh-index">刷新网页索引 ↻</button></div><div class="download-track"><i style="width:${Math.min(100,archived/Math.max(1,total)*100)}%"></i></div><div class="download-details">${active ? `${fmt(status.downloaded_per_minute)} 条/分钟 · ${fmt(status.network_mbps)} MB/s · ${status.active_requests || 0} 个活跃请求 · 剩余 ${status.remaining ?? '—'} 条待处理${status.transfer_total_bytes ? ' · '+(status.transfer_received_bytes/1e9).toFixed(2)+' / '+(status.transfer_total_bytes/1e9).toFixed(2)+' GB' : ''}` : `本轮错误 ${status.counts.error || 0} · 源站未提供 ${status.counts.unavailable || 0}`}<span>网页索引：${fmt(data.counts.downloaded || 0)} 条${archived>(data.counts.downloaded || 0) ? ' · 新轨迹将在导出后可读' : ''}</span></div>`;
+    box.innerHTML=`<div class="download-heading"><strong>${label}</strong><span>${fmt(archived)} / ${fmt(total)} 条</span>${active ? `<span class="download-speed">${fmt(status.network_mbps)} MB/s</span>` : ''}<button class="button refresh-index">更新索引</button></div>`;
     $('.refresh-index',box).onclick=()=>location.reload();
   } catch { /* A static archive may intentionally have no live crawl status. */ }
 }
@@ -55,7 +55,7 @@ function setRoute(view = 'compare') {
 function route() {
   if (!data) return;
   const [view, query = ''] = location.hash.slice(1).split('?');
-  currentView = ['dataset','compare','analysis','about'].includes(view) ? view : 'dataset';
+  currentView = ['dataset','compare','analysis','about'].includes(view) ? view : 'compare';
   const p = new URLSearchParams(query);
   if (currentView === 'compare') {
     if (tasks.has(p.get('task'))) selectedTask = p.get('task');
@@ -73,10 +73,10 @@ function route() {
 function renderOverview() {
   const downloaded = data.counts.downloaded || 0;
   $('#stats').innerHTML = [
-    ['SCIENTIFIC TASKS', data.tasks.length, '独立科学任务'],
-    ['MODEL CONFIGURATIONS', data.models.length, '模型 / Agent / 推理强度'],
-    ['EVALUATION RUNS', fmt(data.expected_trials), `可枚举运行 / ${fmt(data.official_trials)} 榜单记录`],
-    ['ARCHIVED TRAJECTORIES', fmt(downloaded), `${percent(downloaded / (data.expected_trials || 1))} 下载覆盖率`],
+    ['题目', data.tasks.length, '科学任务'],
+    ['模型配置', data.models.length, '含 Agent / 推理强度'],
+    ['公开运行', fmt(data.expected_trials), `榜单共 ${fmt(data.official_trials)} 次`],
+    ['已归档轨迹', fmt(downloaded), `${percent(downloaded / (data.expected_trials || 1))} 覆盖率`],
   ].map(([label,value,desc],i) => `<div class="stat"><small>${label}</small><strong class="${i === 3 ? 'accent' : ''}">${value}</strong><span>${desc}</span></div>`).join('');
   $('#model-table').innerHTML = data.models.map((m,i) => {
     const official=m.official_metrics, runs=data.runs.filter(r=>r.model_id === m.id), n=runs.filter(r=>r.download_status === 'downloaded').length;
@@ -98,7 +98,7 @@ function renderTasks() {
     list.sort((a,b)=>variance(b)-variance(a));
   }
   $('#task-count').textContent = `${list.length} / ${data.tasks.length}`;
-  $('#task-list').innerHTML = list.length ? list.map(t => { const s=taskScore(t.id); return `<button class="task-item ${t.id === selectedTask ? 'active' : ''}" data-task="${esc(t.id)}"><b>${esc(t.name)}</b><span>${s.success}/${s.n} passed · ${percent(s.rate)}</span></button>`; }).join('') : '<div class="empty">没有匹配题目</div>';
+  $('#task-list').innerHTML = list.length ? list.map(t => { const s=taskScore(t.id); return `<button class="task-item ${t.id === selectedTask ? 'active' : ''}" data-task="${esc(t.id)}"><b>${esc(t.name)}</b><span>通过 ${s.success}/${s.n} · ${percent(s.rate)}</span></button>`; }).join('') : '<div class="empty">没有匹配题目</div>';
   $$('.task-item').forEach(button => button.onclick = () => { selectedTask=button.dataset.task; selectedRuns.clear(); setRoute(); });
 }
 function renderPickers() {
@@ -178,10 +178,10 @@ function stepHTML(step,index,lazy) {
     if(message.length>20000) html+=details('展开完整消息 · '+fmt(message.length)+' characters',step.message,lazy,false,true);
   }
   const reasoning=step.reasoning_content || step.reasoning || step.extra?.reasoning;
-  if(reasoning) html+=details('REASONING',reasoning,lazy,false,true);
+  if(reasoning) html+=details('推理',reasoning,lazy,false,true);
   for(const tool of tools) html+=details('↳ '+(tool.function_name || tool.function?.name || 'Tool call'),tool.arguments ?? tool.function?.arguments ?? tool,lazy);
-  if(observation) html+=details('↳ OBSERVATION / 工具返回', observation,lazy,true);
-  html+=details(data.web_projection==='text_only' ? 'RAW STEP · 文本视图字段（已省略二进制）' : 'RAW STEP · 完整原始字段',step,lazy);
+  if(observation) html+=details('工具返回', observation,lazy,true);
+  html+=details(data.web_projection==='text_only' ? '原始字段（文本版，省略二进制）' : '完整原始字段',step,lazy);
   return html+'</article>';
 }
 function renderSteps(container, record) {
@@ -225,13 +225,13 @@ async function renderCompare() {
   renderTasks(); renderPickers();
   $('#selected-task').textContent=tasks.get(selectedTask)?.name || selectedTask;
   const aggregate=taskScore(selectedTask);
-  $('#task-description').textContent=`${aggregate.n} scored runs · ${percent(aggregate.rate)} overall pass rate · 独立运行完整保留`;
+  $('#task-description').textContent=`${aggregate.n} 次有评分运行 · 成功率 ${percent(aggregate.rate)}`;
   $('#compare-columns').innerHTML=selectedModels.map(id=>{
     const list=group(id,selectedTask), m=models.get(id);
     let run=list.find(r=>r.trial_id === selectedRuns.get(id));
     if(!run) run=list.find(r=>r.download_status === 'downloaded') || list[0];
     if(run) selectedRuns.set(id,run.trial_id);
-    return `<article class="trajectory-column" data-model="${esc(id)}"><div class="column-head"><h3>${esc(m.name)}</h3><div class="config">${esc(m.agent)} · ${esc(m.effort || 'default')}</div><select class="run-select" aria-label="${esc(m.name)} 运行选择" ${!list.length ? 'disabled' : ''}>${list.length ? list.map((r,i)=>`<option value="${esc(r.trial_id)}" ${r === run ? 'selected' : ''}>Run ${i+1} · ${number(r.reward) ? 'reward '+r.reward : '未评分'} · ${r.download_status} · ${esc((r.job_name || r.job_id).slice(-50))}</option>`).join('') : '<option>此题没有运行记录</option>'}</select><div class="run-metrics">${run ? `<span class="${run.reward === 1 ? 'pass' : 'fail'}">${number(run.reward) ? 'Reward '+run.reward : '未评分'}</span><span>${money(run.cost_usd)}</span><span>${fmt(number(run.input_tokens) && number(run.output_tokens) ? run.input_tokens+run.output_tokens : null)} tok</span><span>${time(run.duration_seconds)}</span>` : ''}</div><div class="column-links">${run ? `<a href="${esc(run.source_url)}" target="_blank" rel="noopener">原始轨迹 ↗</a><button class="download-jsonl" style="border:0;background:none;padding:0;color:inherit;font:inherit">↓ 此题 JSONL</button>` : ''}</div></div><div class="column-body"><div class="empty"><span class="loading-dot"></span> 正在载入完整轨迹…</div></div></article>`;
+    return `<article class="trajectory-column" data-model="${esc(id)}"><div class="column-head"><h3>${esc(m.name)}</h3><div class="config">${esc(m.agent)} · ${esc(m.effort || 'default')}</div><select class="run-select" aria-label="${esc(m.name)} 运行选择" ${!list.length ? 'disabled' : ''}>${list.length ? list.map((r,i)=>`<option value="${esc(r.trial_id)}" ${r === run ? 'selected' : ''} title="${esc(r.job_name || r.job_id)}">运行 ${i+1} · ${number(r.reward) ? 'reward '+r.reward : '未评分'} · ${{downloaded:'已归档',pending:'待下载',error:'下载失败',unavailable:'源站无轨迹'}[r.download_status] || esc(r.download_status)}</option>`).join('') : '<option>此题没有运行记录</option>'}</select><div class="run-metrics">${run ? `<span class="${run.reward === 1 ? 'pass' : 'fail'}">${number(run.reward) ? 'Reward '+run.reward : '未评分'}</span><span>${money(run.cost_usd)}</span><span>${fmt(number(run.input_tokens) && number(run.output_tokens) ? run.input_tokens+run.output_tokens : null)} tok</span><span>${time(run.duration_seconds)}</span>` : ''}</div><div class="column-links">${run ? `<a href="${esc(run.source_url)}" target="_blank" rel="noopener">原始轨迹 ↗</a><button class="download-jsonl" style="border:0;background:none;padding:0;color:inherit;font:inherit">↓ 此题 JSONL</button>` : ''}</div></div><div class="column-body"><div class="empty"><span class="loading-dot"></span> 正在载入完整轨迹…</div></div></article>`;
   }).join('');
   if(data.web_projection==='text_only') $$('.download-jsonl').forEach(button=>button.textContent='↓ 此题文本 JSONL');
   $$('.run-select').forEach(select=>select.onchange=()=>{selectedRuns.set(select.closest('[data-model]').dataset.model,select.value);setRoute();});
@@ -312,13 +312,13 @@ function renderPair() {
     if(!x.complete || !y.complete || x.n<expected || y.n<expected) continue;
     if(Math.abs(x.mean-y.mean)<1e-12) ties++;else if(x.mean>y.mean) wins++;else losses++;
   }
-  $('#pair-result').innerHTML=`<div class="pair-stats"><div><strong>${wins}</strong><span>A 胜出</span></div><div><strong>${ties}</strong><span>相同平均 REWARD</span></div><div><strong>${losses}</strong><span>B 胜出</span></div></div><p class="subtle">${wins+ties+losses} 道共同完整评分题目 · 按每题平均 reward 比较</p><button class="button" id="compare-pair">阅读两个模型的轨迹 ↗</button>`;
+  $('#pair-result').innerHTML=`<div class="pair-stats"><div><strong>${wins}</strong><span>A 胜出</span></div><div><strong>${ties}</strong><span>相同平均 reward</span></div><div><strong>${losses}</strong><span>B 胜出</span></div></div><p class="subtle">${wins+ties+losses} 道共同完整评分题目 · 按每题平均 reward 比较</p><button class="button" id="compare-pair">阅读两个模型的轨迹 ↗</button>`;
   $('#compare-pair').onclick=()=>{selectedModels=[a,b];setRoute();};
 }
 function renderMatrix() {
   const q=$('#matrix-search').value.toLowerCase();
   const colors=['#edf1ef','#b8e4cf','#64bc98','#187653'];
-  $('#matrix').innerHTML='<table><thead><tr><th>SCIENTIFIC TASK</th>'+data.models.map(m=>`<th title="${esc(modelLabel(m.id))}">${esc(m.name)}<br><span>${esc(m.agent)}</span></th>`).join('')+'</tr></thead><tbody>'+data.tasks.filter(t=>t.name.toLowerCase().includes(q)).map(t=>`<tr><td><button data-task-open="${esc(t.id)}">${esc(t.name)}</button></td>${data.models.map(m=>{
+  $('#matrix').innerHTML='<table><thead><tr><th>题目</th>'+data.models.map(m=>`<th title="${esc(modelLabel(m.id))}">${esc(m.name)}<br><span>${esc(m.agent)}</span></th>`).join('')+'</tr></thead><tbody>'+data.tasks.filter(t=>t.name.toLowerCase().includes(q)).map(t=>`<tr><td><button data-task-open="${esc(t.id)}">${esc(t.name)}</button></td>${data.models.map(m=>{
     const s=score(group(m.id,t.id)),r=s.rate;
     return `<td><button data-cell-task="${esc(t.id)}" data-cell-model="${esc(m.id)}" style="background:${r===null ? '#fafbf9' : colors[Math.round(r*3)]};color:${r>.8 ? 'white' : '#537a5d'}" title="${esc(modelLabel(m.id))}: ${s.success}/${s.n} scored runs">${r===null ? '—' : Math.round(r*100)+'%'}</button></td>`;
   }).join('')}</tr>`).join('')+'</tbody></table>';
@@ -334,8 +334,11 @@ async function init() {
     for(const run of data.runs){const key=run.model_id+'\n'+run.task_name;if(!runsByGroup.has(key)) runsByGroup.set(key,[]);runsByGroup.get(key).push(run);}
     selectedModels=data.models.slice(0,2).map(m=>m.id);
     selectedTask=data.tasks.find(t=>t.name==='traffic-flux-inversion')?.id || data.tasks[0]?.id;
-    $('#source-link').href=data.source_url;$('#updated').textContent='SNAPSHOT '+new Date(data.generated_at).toISOString().slice(0,10);
-    if(!data.discovery_complete || data.counts.error || data.counts.pending || data.counts.unavailable || data.unlisted_trials || data.web_projection==='text_only') notice(`${data.web_projection==='text_only' ? '网页文本阅读版：省略内嵌图片与二进制，完整 JSONL 在本地 dataset 目录。' : ''}数据覆盖：${data.counts.downloaded || 0} / ${data.expected_trials} 条可枚举轨迹。${!data.discovery_complete ? '榜单发现不完整；' : ''}${data.unlisted_trials || 0} 次榜单运行未公开 trial；${data.counts.pending || 0} 等待下载，${data.counts.error || 0} 下载错误，${data.counts.unavailable || 0} 源站未提供轨迹。`);
+    $('#source-link').href=data.source_url;$('#updated').textContent='数据快照 '+new Date(data.generated_at).toISOString().slice(0,10);
+    if(!data.discovery_complete || data.counts.error || data.counts.pending || data.counts.unavailable || data.unlisted_trials || data.web_projection==='text_only') {
+      notice(`${data.web_projection==='text_only' ? '文本阅读版（省略内嵌图片） · ' : ''}可读轨迹 ${fmt(data.counts.downloaded || 0)} / ${fmt(data.expected_trials)} · 完整数据与缺失情况见说明。`);
+      const link=document.createElement('a');link.href='#about';link.textContent='查看说明';$('#load-error').append(link);
+    }
     renderOverview();renderCostChart();renderPairPickers();route();
     $('#task-search').oninput=renderTasks;$('#task-sort').onchange=renderTasks;$('#matrix-search').oninput=renderMatrix;
     $('#reading-mode').onchange=renderCompare;$('#show-system').onchange=renderCompare;

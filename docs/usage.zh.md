@@ -25,7 +25,9 @@ GitHub：[yangjunx21/terminal-bench-science-atlas](https://github.com/yangjunx21
 
 ---
 
-# Science Atlas — Terminal-Bench Science dataset + analysis
+# TB Science 轨迹分析
+
+网页采用简洁的白底布局，打开即进入轨迹对比。顶部可切换模型概览、统计和说明；成本图、配对分析和详细说明按需展开。
 
 独立的 Harbor 公开轨迹下载器与静态分析网站。下载和本地服务只用 Python 标准库（3.9+）；浏览器需支持 `DecompressionStream`，Markdown／公式依赖已打包在本地。Node.js 24+ 仅用于前端测试或重建依赖资源。
 
@@ -128,4 +130,4 @@ dist/
 
 Harbor 目前以 Next.js Flight HTML 提供 SSR 的 trial 分页，通过只读 `fetchLeaderboardWithRows` server action 读取榜单，通过 `/api/trials/<id>/trajectory?jobId=<id>` 读取 ATIF。标准轨迹端点返回 404/5xx 时回退到同一公开文件浏览器的 `/api/trials/<id>/files/agent/trajectory.json?jobId=<id>`，适用于超大 ATIF。请求使用 gzip。脚本自动从当前前端 bundle 查找 action ID，不固定写死部署哈希，也不执行远端脚本。站点接口变化会显式报错，需要更新解析逻辑。没有权限的资源不尝试绕过，429/暂时错误进行退避重试。
 
-刷新发现需用 `--rediscover`；`discover` 默认也使用缓存。数据目录同一时刻只运行一个 crawl / build 写入进程。发布可直接托管 `dist/`（GitHub Pages / 静态服务器 / Sites），不依赖后端。外部 Google Fonts 仅用于排版，加载失败会回退系统字体。`dist` 中包含真实公开轨迹，体积可能较大，部署前检查平台单文件与总大小限制。
+刷新发现需用 `--rediscover`；`discover` 默认也使用缓存。数据目录同一时刻只运行一个 crawl / build 写入进程。发布可直接托管 `dist/`（GitHub Pages / 静态服务器 / Sites），不依赖后端。网页使用系统字体；Markdown、代码高亮和公式字体随网页打包。`dist` 中包含真实公开轨迹，体积可能较大，部署前检查平台单文件与总大小限制。

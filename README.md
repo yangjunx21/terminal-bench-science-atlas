@@ -1,4 +1,4 @@
-# Terminal-Bench Science Atlas
+# TB Science 轨迹分析
 
 Archive public [Harbor Terminal-Bench Science](https://hub.harborframework.com/datasets/terminal-bench-science/terminal-bench-science/latest?tab=leaderboard) trajectories, preserve the original ATIF, and compare models on each task in a static website.
 
@@ -47,7 +47,7 @@ python3 crawl.py build
 python3 crawl.py serve --port 8765
 ```
 
-Open http://localhost:8765. To update the reading snapshot during an active download, run `python3 crawl.py snapshot` in another terminal; it freezes cache files and exports a separate snapshot without pausing the crawler. The site includes task search, model selection, run selection, aligned side-by-side trajectories, tool arguments/results, official leaderboard scores, archive coverage, and a task/model performance matrix. `dist/` is static and can be hosted on any static server. It loads only the selected task files. To create smaller web assets while keeping dataset JSONL lossless:
+Open http://localhost:8765 directly into the comparison reader. The compact layout has a task list, model/run selectors and side-by-side trajectories. Model overview and the task/model matrix are separate tabs; cost and paired comparisons expand on demand. To update the reading snapshot during an active download, run `python3 crawl.py snapshot` in another terminal; it freezes cache files and exports a separate snapshot without pausing the crawler. `dist/` is static and can be hosted on any static server. It loads only the selected task files. To create smaller web assets while keeping dataset JSONL lossless:
 
 ```sh
 python3 crawl.py build --web-text-only

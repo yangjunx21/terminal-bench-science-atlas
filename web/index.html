@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Terminal-Bench Science 公开评测轨迹数据集：按题目横向比较模型、工具调用、运行成本与成功率。">
-  <title>Science Atlas · Terminal-Bench trajectories</title>
+  <title>TB Science 轨迹分析</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="vendor/texmath/texmath.css">
   <link rel="stylesheet" href="vendor/highlight/github.min.css">
@@ -16,36 +16,31 @@
   <script src="render.js" defer></script><script src="app.js" defer></script>
 </head>
 <body>
-  <aside class="sidebar">
-    <a class="brand" href="#dataset"><span class="brand-icon">◈</span> SCIENCE<span class="brand-light">ATLAS</span></a>
-    <div class="sidebar-kicker">RESEARCH WORKSPACE</div>
+  <header class="app-header">
+    <a class="brand" href="#compare">TB Science 轨迹分析</a>
     <nav aria-label="主导航">
-      <a href="#dataset" data-tab="dataset"><span>▦</span> Dataset <small>数据集</small></a>
-      <a href="#compare" data-tab="compare"><span>⇄</span> Compare <small>轨迹对比</small></a>
-      <a href="#analysis" data-tab="analysis"><span>▥</span> Analysis <small>分析</small></a>
-      <a href="#about" data-tab="about"><span>ⓘ</span> Methodology <small>数据说明</small></a>
+      <a href="#compare" data-tab="compare">轨迹对比</a>
+      <a href="#dataset" data-tab="dataset">模型概览</a>
+      <a href="#analysis" data-tab="analysis">统计</a>
+      <a href="#about" data-tab="about">说明</a>
     </nav>
-    <div class="sidebar-note"><span class="live-dot"></span> PUBLIC EVALUATIONS<p>One question.<br>Different ways to solve it.</p><a id="source-link" target="_blank" rel="noopener">Harbor Hub ↗</a></div>
-    <div class="sidebar-bottom">TERMINAL-BENCH SCIENCE<br><span>Trajectory research archive · v1</span></div>
-  </aside>
+    <div class="header-links"><a href="https://github.com/yangjunx21/terminal-bench-science-atlas" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories" target="_blank" rel="noopener noreferrer">HF Dataset</a><a id="source-link" target="_blank" rel="noopener noreferrer">Harbor</a></div>
+  </header>
   <main>
-    <header class="topbar"><span>Benchmarks <b>/</b> Terminal-Bench Science</span><div><span class="source-tag">● SOURCE-LINKED</span><span id="updated"></span></div></header>
+    <div class="snapshot-line"><span>Terminal-Bench Science</span><span id="updated"></span></div>
     <div id="download-progress" class="download-progress" hidden aria-live="polite"></div>
     <div id="load-error" class="notice" hidden></div>
-    <section id="dataset" class="view">
-      <div class="eyebrow">THE TRAJECTORY DATASET <span>01 / EXPLORE</span></div>
-      <div class="hero"><div><h1>Terminal-Bench <em>Science.</em></h1><p>从最终得分，走进解题过程。<br>检索每道科学问题的完整运行轨迹，比较不同模型如何推理、编写代码与调用工具。</p></div><a class="primary" href="#compare">开始横向对比 <span>↗</span></a></div>
+    <section id="dataset" class="view" hidden>
+      <div class="page-heading"><h1>模型概览</h1><a class="button" href="data/runs.csv" download>运行清单 CSV</a></div>
       <div id="stats" class="stats"></div>
-      <div class="section-heading"><div><h2>Models & configurations <span>模型与评测配置</span></h2><p>覆盖公开榜单的所有提交；保留 agent、推理强度与每次独立运行。</p></div><a class="button" href="data/runs.csv" download>↓ 运行清单 CSV</a></div>
-      <div class="table-wrap"><table><thead><tr><th>#</th><th>MODEL / AGENT</th><th>REASONING</th><th>RESOLUTION RATE <span title="Harbor 官方榜单指标">ⓘ</span></th><th>TOKENS</th><th>COST</th><th>TRAJECTORIES</th><th></th></tr></thead><tbody id="model-table"></tbody></table></div>
-      <div class="footnote"><span>↳ Resolution rate、tokens、cost 来自 Harbor 官方榜单；轨迹下载覆盖率单独显示。</span><a href="#about">数据格式与统计口径 ↗</a></div>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>模型 / Agent</th><th>推理强度</th><th>官方成功率</th><th>Tokens</th><th>成本</th><th>已归档轨迹</th><th></th></tr></thead><tbody id="model-table"></tbody></table></div>
+      <div class="footnote"><span>成功率、Tokens 和成本来自 Harbor 官方榜单。</span><a href="#about">统计口径</a></div>
     </section>
-    <section id="compare" class="view" hidden>
-      <div class="eyebrow">READ THE PROCESS <span>02 / COMPARE</span></div>
-      <div class="page-heading"><div><h1>One task. <em>Many approaches.</em></h1><p>选一道题，将不同模型的完整解题过程放在一起阅读。</p></div><button id="share" class="button">复制对比链接 ↗</button></div>
+    <section id="compare" class="view">
+      <div class="page-heading"><h1>轨迹对比</h1><button id="share" class="button">复制对比链接</button></div>
       <div class="compare-shell">
         <aside class="task-panel"><div class="task-panel-head"><b>问题列表</b><span id="task-count"></span></div><label class="search"><span>⌕</span><input id="task-search" type="search" placeholder="搜索题目名称…" aria-label="搜索题目"></label><select id="task-sort" aria-label="题目排序"><option value="name">按名称排序</option><option value="hard">先看低通过率</option><option value="disagree">先看模型分歧</option></select><div id="task-list"></div></aside>
-        <div class="compare-main"><div class="task-title"><span class="pill">SCIENTIFIC TASK</span><h2 id="selected-task"></h2><div id="task-description"></div></div>
+        <div class="compare-main"><div class="task-title"><h2 id="selected-task"></h2><div id="task-description"></div></div>
           <div id="model-picker" class="model-picker"></div>
           <div class="reading-toolbar"><div><label>阅读模式 <select id="reading-mode"><option value="all">完整过程</option><option value="answer">最终回复</option><option value="tools">工具调用</option><option value="reasoning">推理 / Agent 消息</option></select></label><label>文本显示 <select id="message-format"><option value="rendered">Markdown / 公式</option><option value="source">原始文本</option></select></label><label><input id="show-system" type="checkbox"> 系统 / 环境提示</label><label><input id="sync-scroll" type="checkbox" checked> 同步滚动</label></div><label class="search"><span>⌕</span><input id="step-search" type="search" placeholder="搜索当前轨迹…" aria-label="搜索轨迹内容"></label></div>
           <div id="compare-columns" class="compare-columns"></div>
@@ -53,15 +48,15 @@
       </div>
     </section>
     <section id="analysis" class="view" hidden>
-      <div class="eyebrow">LOOK ACROSS RUNS <span>03 / ANALYZE</span></div><div class="page-heading"><div><h1>Patterns in <em>performance.</em></h1><p>观察题目难度、模型分歧，以及成功率与运行成本的关系。</p></div><a class="button" href="data/manifest.json" download>↓ 数据索引 JSON</a></div>
-      <div class="analysis-grid"><article class="panel"><div class="section-heading"><h2>Resolution × cost</h2><span class="subtle">官方榜单 · 每次运行平均成本</span></div><div id="cost-chart"></div></article><article class="panel"><h2>Paired task comparison</h2><p class="subtle">同一题目的平均 reward，比较两个配置的完整运行结果。</p><div id="pair-picker"></div><div id="pair-result"></div></article></div>
-      <div class="section-heading"><div><h2>Task × model matrix <span>题目成功率矩阵</span></h2><p>每格为 scored trials 中 reward = 1 的比例；点击进入该题与模型的轨迹。</p></div><label class="search"><span>⌕</span><input id="matrix-search" placeholder="筛选矩阵题目…" aria-label="筛选矩阵题目"></label></div>
+      <div class="page-heading"><h1>题目成功率</h1><a class="button" href="data/manifest.json" download>数据索引 JSON</a></div>
+      <div class="section-heading"><p>按有评分的运行计算；点击单元格查看轨迹。</p><label class="search"><span>⌕</span><input id="matrix-search" placeholder="搜索题目…" aria-label="筛选矩阵题目"></label></div>
       <div class="legend"><span><i style="background:#edf1ef"></i>0%</span><span><i style="background:#b8e4cf"></i>33%</span><span><i style="background:#64bc98"></i>67%</span><span><i style="background:#187653"></i>100%</span><span>— 缺少评分</span></div><div id="matrix" class="table-wrap matrix"></div>
+      <details class="analysis-extra"><summary>成本与模型配对比较</summary><div class="analysis-grid"><article class="panel"><h2>成功率与平均成本</h2><p class="subtle">Harbor 官方榜单</p><div id="cost-chart"></div></article><article class="panel"><h2>模型配对比较</h2><p class="subtle">按同题平均 reward 比较，保留所有独立运行。</p><div id="pair-picker"></div><div id="pair-result"></div></article></div></details>
     </section>
     <section id="about" class="view" hidden>
-      <div class="eyebrow">PROVENANCE & REPRODUCIBILITY <span>04 / METHOD</span></div><h1>Follow the <em>evidence.</em></h1>
-      <div class="about-grid"><article class="panel"><h2>来源与覆盖范围</h2><p>数据来自 Harbor Hub 的 Terminal-Bench Science 公开榜单。下载器自动发现公开榜单、全部模型提交和 trial 分页，并按 trial ID 去重。每条运行都附有 Harbor 原始页面链接。</p><p id="coverage-note"></p><p>“所有模型”指本次快照中此数据集公开榜单可访问的提交。未上榜、私有、已删除或未提供的轨迹无法由公开接口取得。缺失、错误、等待下载均明确记录。</p></article>
-      <article class="panel"><h2>JSONL 数据格式</h2><pre>dataset/models/&lt;model&gt;/&lt;configuration-id&gt;/&lt;task&gt;.jsonl
+      <div class="page-heading"><h1>数据说明</h1></div>
+      <div class="about-grid"><details class="panel" open><summary>来源与覆盖范围</summary><p>数据来自 Harbor Hub 的 Terminal-Bench Science 公开榜单，按 trial ID 去重。每条轨迹附有原始页面链接。</p><p id="coverage-note"></p><p>未公开、私有或已删除的轨迹无法取得。缺失、错误和等待下载均保留状态。</p></details>
+      <details class="panel"><summary>JSONL 数据格式</summary><pre>dataset/models/&lt;model&gt;/&lt;configuration-id&gt;/&lt;task&gt;.jsonl
 
 每行 = 一次独立运行
   model / agent / reasoning_effort
@@ -71,9 +66,9 @@
   trial       原始运行指标与元数据
   trajectory  原始合法 ATIF 对象（完整 steps）
   raw_trajectory  源文件不是合法 JSON 时的完整原文
-  reading_trajectory  脱敏数值留空的阅读副本</pre><p>同题的重复运行分别保留，不用最好的一次替代。网页按需载入 gzip JSONL，解压后可直接下载原始 JSONL。</p></article>
-      <article class="panel"><h2>统计口径</h2><p>榜单首页与成本图使用 Harbor 官方聚合指标。矩阵统计 is_scored ≠ false 且 reward 为数字的 trial：成功定义为 reward = 1；未知值不作为失败。</p><p>配对分析只使用两个配置都具有完整预期评分的题目，比较每题的平均 reward，展示胜 / 平 / 负。不同模型的运行序号并不代表相同随机种子。</p><p>轨迹中的步骤与工具调用计数来自 ATIF steps；耗时来自 trial 的 started_at / finished_at，包含环境和验证时间。推理内容仅展示源轨迹实际公开的内容。</p></article>
-      <article class="panel"><h2>复现与更新</h2><pre>python3 crawl.py crawl
+  reading_trajectory  脱敏数值留空的阅读副本</pre><p>同题的重复运行分别保留。网页 JSONL 若为文本版会明确标记；完整无损数据保存在本地及 HF 归档中，HF 上传进度以 upload-status.json 为准。</p></details>
+      <details class="panel"><summary>统计口径</summary><p>模型概览与成本图使用 Harbor 官方指标。题目矩阵仅统计有数值评分的运行，reward = 1 为成功，未知评分不作为失败。</p><p>配对比较仅使用双方都有完整预期评分的题目，按每题平均 reward 统计胜 / 平 / 负。不同模型的运行序号不代表相同随机种子。</p><p>步骤与工具调用来自 ATIF；耗时包含环境和验证时间。推理仅展示源轨迹实际公开的内容。</p></details>
+      <details class="panel"><summary>复现与下载</summary><pre>python3 crawl.py crawl
 python3 crawl.py build
 python3 crawl.py serve --port 8765
 
@@ -82,8 +77,8 @@ python3 crawl.py crawl --task traffic-flux-inversion
 python3 crawl.py crawl --model "GPT-6 Astra"
 
 # 重新发现榜单，保留成功下载
-python3 crawl.py crawl --rediscover</pre><p>下载与服务仅使用 Python 标准库，支持并发、重试和断点续传。Markdown、公式、代码高亮与字体已随网站打包。</p><p><a href="https://github.com/yangjunx21/terminal-bench-science-atlas" target="_blank" rel="noopener noreferrer">GitHub · 下载脚本与网站源码 ↗</a><br><a href="https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories" target="_blank" rel="noopener noreferrer">Hugging Face · 数据集与分析表 ↗</a></p><p>两个仓库目前均为私有，需登录有访问权限的账号。HF 的 upload-status.json 记录快照上传是否完成。</p><a href="data/manifest.json" download>下载完整 manifest ↗</a></article></div>
+python3 crawl.py crawl --rediscover</pre><p>下载脚本支持断点续传。Markdown、公式与字体已随网页打包。GitHub 和 HF 仓库均为私有，需登录有权限的账号。</p><a href="data/manifest.json" download>下载 manifest</a></details></div>
     </section>
-    <footer><span>SCIENCE ATLAS <b>·</b> A closer look at scientific problem solving.</span><span>Public trajectories. Traceable sources.</span></footer>
+    <footer>TB Science 轨迹分析 · 数据来源 Harbor Hub</footer>
   </main>
 </body></html>
