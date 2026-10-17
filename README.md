@@ -7,12 +7,12 @@ Archive public [Harbor Terminal-Bench Science](https://hub.harborframework.com/d
 - Dataset: https://huggingface.co/datasets/yangjunxiao2021/terminal-bench-science-trajectories
 - [中文使用说明](docs/usage.zh.md)
 
-Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs `uvx` or `huggingface_hub` installed in the active Python environment. Both repositories are public.
+Python 3.9+ on macOS/Linux; downloading, packaging, analysis and serving use only the Python standard library. The reader includes local, pinned Markdown, KaTeX, syntax-highlighting and sanitization assets, so rendering needs no CDN. Hugging Face upload additionally needs `curl` and either `uvx` or `huggingface_hub` installed in the active Python environment. Both repositories are public.
 
 ## Download manually
 
 ```sh
-git clone https://github.com/yangjunx21/terminal-bench-science-atlas.git
+git clone --depth 1 --single-branch --branch main https://github.com/yangjunx21/terminal-bench-science-atlas.git
 cd terminal-bench-science-atlas
 python3 crawl.py status
 python3 -u crawl.py crawl --workers 8
@@ -84,7 +84,7 @@ uvx --from huggingface_hub python upload_http.py --stage hub-export \
   --repo yangjunxiao2021/terminal-bench-science-trajectories --public --multipart-workers 32
 ```
 
-On the original development machine a background uploader is already running with a sleep inhibitor; its log is `dataset/hf-sync-public.log`. Do not start a duplicate. `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
+The prepared capture has finished uploading and all 840 remote archive sizes/hashes have been verified. The development upload log is `dataset/hf-sync-public.log`. For future updates, the stage writer lock prevents overlapping uploads, and `hub-export/upload-status.json` reports only committed archives. A live process or transferred byte counter alone does not establish that files are available on the Hub.
 
 ## Access and sharing
 
@@ -92,13 +92,13 @@ The [comparison website](https://yangjunx21.github.io/terminal-bench-science-atl
 
 To update that snapshot, run `export_public_site.py` after a text-only website build, copy its output into the separate `pages-host` checkout and commit it. `deploy_pages.py --workers 64 --enable` publishes that checkout and configures GitHub Pages. The exporter caps web chunks at 3 MiB; the reader reassembles their exact gzip bytes. The deployment helper splits Git transfers across temporary branches and removes them after publishing. Use an existing SSH key when HTTPS pushes time out. `verify_public.py --site https://yangjunx21.github.io/terminal-bench-science-atlas/ --require-complete` checks anonymous website/data access and requires the raw upload to be complete.
 
-Once the dataset upload is complete, anyone can download the public archive without signing in:
+Anyone can download the public archive without signing in:
 
 ```sh
 hf download yangjunxiao2021/terminal-bench-science-trajectories --type dataset --local-dir tb-science
 ```
 
-Small `analysis/*.csv` tables can be downloaded independently before the full raw upload completes.
+Small `analysis/*.csv` tables can be downloaded independently of the full raw archive.
 
 `prepare` is offline and freezes the atomically written cache files before packaging, so a separate manual crawl may continue. Its output is `hub-export/`:
 
@@ -139,7 +139,7 @@ summary = scored.assign(passed=scored.reward.eq(1)).groupby(
 print(summary.sort_values("success_rate", ascending=False))
 ```
 
-Raw download examples and provenance are in the dataset card. The initial snapshot is partial: some public runs fail to download and some leaderboard configurations do not expose trial listings. Missing scores are never counted as failures. Official leaderboard rates and observed scored-run rates have different denominators. Repeated run ordinals do not identify matched seeds.
+The 2026-10-17 UTC capture covers 17 configurations and 70 tasks. Twelve configurations expose 2,520 trials: 2,507 have readable trajectories and 13 returned no trajectory. Five configurations expose only aggregate scores, leaving 1,050 official runs without public trial listings. All 840 model/task archives, 17.53 GB compressed, have been uploaded and verified. Raw download examples and provenance are in the dataset card. Missing scores are never counted as failures. Official leaderboard rates and observed scored-run rates have different denominators. Repeated run ordinals do not identify matched seeds.
 
 ## Checks
 
