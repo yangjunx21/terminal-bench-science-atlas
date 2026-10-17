@@ -344,7 +344,13 @@ async function init() {
     $('#reading-mode').onchange=renderCompare;$('#show-system').onchange=renderCompare;
     $('#message-format').onchange=renderCompare;
     let timer;$('#step-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(renderCompare,250);};
-    $('#share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('#share').textContent='链接已复制 ✓';}catch{ $('#share').textContent='请复制地址栏中的完整链接'; } };
+    $('#share').onclick=async()=>{
+      const url=new URL(location.href),params=new URLSearchParams({task:selectedTask,models:selectedModels.join(',')});
+      const ids=selectedModels.map(id=>selectedRuns.get(id)||'');if(ids.some(Boolean)) params.set('runs',ids.join(','));
+      url.hash='compare?'+params.toString();
+      try{await navigator.clipboard.writeText(url.href);$('#share').textContent='链接已复制 ✓';}
+      catch{setRoute();$('#share').textContent='请复制地址栏中的完整链接';}
+    };
     window.addEventListener('hashchange',route);
     pollDownload();setInterval(pollDownload,5000);
   }catch(error){notice(error.message);$('#stats').innerHTML='<div class="empty">数据尚未载入</div>';}
