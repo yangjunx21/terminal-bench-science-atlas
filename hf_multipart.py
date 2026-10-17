@@ -28,9 +28,10 @@ class MultipartUploader:
         except (ImportError, OSError, ValueError):
             pass
         self.pool = ThreadPoolExecutor(max_workers=workers)
+        self.connections = threading.Semaphore(workers)
         self.temporary = tempfile.TemporaryDirectory(prefix='tb-science-upload-parts-')
         self.lock = threading.Lock()
-        self.large_gate = threading.Semaphore(1)
+        self.large_gate = threading.Semaphore(3)
         self.received = 0
         self.started = time.monotonic()
         self.last_report = self.started
@@ -40,6 +41,12 @@ class MultipartUploader:
         self.temporary.cleanup()
 
     def put(self, source, offset, size, url, part_name, require_etag=True):
+        # Basic uploads run in file workers; multipart uploads run in part
+        # workers. Bound both kinds together rather than multiplying the limit.
+        with self.connections:
+            return self._put(source, offset, size, url, part_name, require_etag)
+
+    def _put(self, source, offset, size, url, part_name, require_etag=True):
         path = Path(self.temporary.name) / part_name
         response_path = path.with_name(path.name + '.response')
         try:
@@ -96,8 +103,8 @@ class MultipartUploader:
 
     def upload(self, source, descriptor, repo):
         if descriptor['bytes'] > 64 * 1024 * 1024:
-            # Give one large archive the available part connections. Too many
-            # simultaneous objects can starve sockets and cause S3 idle timeouts.
+            # Overlap a few archives to fill idle slots at a file's tail. The
+            # shared connection limit still bounds all actual PUT requests.
             with self.large_gate:
                 return self._upload(source, descriptor, repo)
         return self._upload(source, descriptor, repo)
