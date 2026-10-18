@@ -142,30 +142,16 @@ function content(value) {
   if(Array.isArray(value)) return value.map(part=>part.type === 'image' ? `[image: ${part.source?.path || part.image_url?.url || 'see raw ATIF'}]` : part.text || content(part.content) || JSON.stringify(part,null,2)).join('\n');
   return JSON.stringify(value,null,2);
 }
-function details(title, value, lazy, structured=false, markdown=false) {
+function details(title, value, lazy, markdown=false) {
   const id=lazy.length;lazy.push(value);
-  return `<details data-lazy="${id}" ${structured ? 'data-structured="1"' : ''} ${markdown ? 'data-markdown="1"' : ''}><summary>${esc(title)}</summary></details>`;
+  return `<details data-lazy="${id}" ${markdown ? 'data-markdown="1"' : ''}><summary>${esc(title)}</summary></details>`;
 }
 function messageHTML(text) {
   return $('#message-format').value==='source' ? `<pre class="message-source">${esc(text)}</pre>` : `<div class="markdown-body">${ScienceMarkdown.html(text)}</div>`;
 }
-function observationBlocks(value, blocks=[], depth=0) {
-  if(depth>40 || value==null) return blocks;
-  if(typeof value==='string'){if(value) blocks.push({type:'text',text:value});return blocks;}
-  if(Array.isArray(value)){for(const item of value) observationBlocks(item,blocks,depth+1);return blocks;}
-  if(typeof value!=='object') return blocks;
-  if(value.type==='image'){
-    const mime=value.source?.media_type || value.file?.type;
-    const base64=value.source?.data || value.file?.base64;
-    if(/^image\/(png|jpeg|webp|gif)$/.test(mime || '') && typeof base64==='string') blocks.push({type:'image',mime,base64});
-    else blocks.push({type:'text',text:'[Image reference: '+(value.source?.path || 'see original Harbor trial')+']'});
-  }else if(value.type==='text' && typeof value.text==='string') blocks.push({type:'text',text:value.text});
-  else for(const key of ['results','content','text','stdout','stderr','output','return']) if(key in value) observationBlocks(value[key],blocks,depth+1);
-  return blocks;
-}
 function appendLongText(parent,text) {
   const frame=document.createElement('div');frame.className='code-frame';
-  frame.innerHTML='<div class="code-toolbar"><span>原始字段 / 工具输出</span><button type="button" class="code-copy">复制代码</button></div><pre class="code"><code></code></pre>';
+  frame.innerHTML='<div class="code-toolbar"><span>原始字段</span><button type="button" class="code-copy">复制代码</button></div><pre class="code"><code></code></pre>';
   const code=$('code',frame);code.textContent=text.slice(0,60000);parent.append(frame);
   ScienceMarkdown.attachCopy($('.code-copy',frame),()=>text);
   if(text.length>60000){const button=document.createElement('button');button.className='button';button.textContent=`显示完整内容 · ${fmt(text.length)} characters`;button.onclick=()=>{code.textContent=text;button.remove();};parent.append(button);}
@@ -173,20 +159,22 @@ function appendLongText(parent,text) {
 function stepHTML(step,index,lazy) {
   const tools=step.tool_calls || [], observation=step.observation;
   let html=`<article class="step"><div class="step-title"><strong>${esc((step.source || 'step').toUpperCase())}</strong><span>#${esc(step.step_id ?? index+1)} ${esc(step.timestamp ? new Date(step.timestamp).toLocaleTimeString('en-GB',{timeZone:'UTC'})+' UTC' : '')}</span></div>`;
-  if(step.message){
+  if(step.message && step.source!=='tool'){
     const message=content(step.message);
     html+=messageHTML(message.slice(0,20000));
-    if(message.length>20000) html+=details('展开完整消息 · '+fmt(message.length)+' characters',step.message,lazy,false,true);
+    if(message.length>20000) html+=details('展开完整消息 · '+fmt(message.length)+' characters',step.message,lazy,true);
   }
   const reasoning=step.reasoning_content || step.reasoning || step.extra?.reasoning;
-  if(reasoning) html+=details('推理',reasoning,lazy,false,true);
-  for(const tool of tools) html+=details('↳ '+(tool.function_name || tool.function?.name || 'Tool call'),tool.arguments ?? tool.function?.arguments ?? tool,lazy);
-  if(observation) html+=details('工具返回', observation,lazy,true);
+  if(reasoning) html+=details('推理',reasoning,lazy,true);
+  if(tools.length || observation!=null || step.source==='tool'){
+    const id=lazy.length;lazy.push(step);html+=`<div data-tool-step="${id}"></div>`;
+  }
   html+=details(data.web_projection==='text_only' ? '原始字段（文本版，省略二进制）' : '完整原始字段',step,lazy);
   return html+'</article>';
 }
 function renderSteps(container, record) {
   let steps=(record.trajectory || record.reading_trajectory)?.steps || [];
+  const callNames=new Map(steps.flatMap(step=>(step.tool_calls||[]).map(tool=>[tool.tool_call_id || tool.id,ScienceTools.nameOf(tool)])));
   const mode=$('#reading-mode').value, query=$('#step-search').value.toLowerCase();
   if(!$('#show-system').checked) steps=steps.filter(s=>s.source !== 'system' && !content(s.message).startsWith('<environment_context>'));
   if(mode === 'answer') {
@@ -202,19 +190,20 @@ function renderSteps(container, record) {
     $('.load-more',container)?.remove();
     const chunk=steps.slice(offset,offset+80); offset+=chunk.length;
     container.insertAdjacentHTML('beforeend',chunk.map((s,i)=>stepHTML(s,offset-chunk.length+i,lazy)).join(''));
+    $$('[data-tool-step]',container).forEach(block=>{
+      if(block.dataset.loaded) return;block.dataset.loaded='1';
+      ScienceTools.appendStep(block,lazy[Number(block.dataset.toolStep)],callNames);
+    });
     ScienceMarkdown.bind(container);
     $$('details[data-lazy]',container).forEach(detail=>{
       if(detail.dataset.bound) return;detail.dataset.bound='1';
       detail.ontoggle=()=>{
         if(!detail.open || detail.dataset.loaded) return;detail.dataset.loaded='1';
-        const value=lazy[Number(detail.dataset.lazy)],blocks=detail.dataset.structured ? observationBlocks(value) : [];
+        const value=lazy[Number(detail.dataset.lazy)];
         if(detail.dataset.markdown && $('#message-format').value!=='source'){
           ScienceMarkdown.append(detail,content(value));return;
         }
-        if(blocks.length){for(const block of blocks){
-          if(block.type==='text') appendLongText(detail,block.text);
-          else {const img=document.createElement('img');img.alt='Image from original trajectory';img.loading='lazy';img.src=`data:${block.mime};base64,${block.base64}`;detail.append(img);}
-        }}else appendLongText(detail,content(value));
+        appendLongText(detail,content(value));
       };
     });
     if(offset<steps.length){const button=document.createElement('button');button.className='button load-more';button.textContent=`继续显示 · ${offset} / ${steps.length} 步`;button.onclick=append;container.append(button);}
