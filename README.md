@@ -56,7 +56,7 @@ python3 crawl.py build --web-text-only
 
 The page labels this text projection explicitly. Embedded binary image payloads are omitted only from web copies. Original downloads and full dataset JSONL remain unchanged.
 
-Task prompts, agent messages and exposed reasoning support Markdown headings, lists, tables, fenced code and TeX (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`). Code and display formulas have copy buttons. The “原始文本” selector shows source text; tool arguments and observations always preserve literal text. Raw HTML and unsafe TeX commands are disabled. Browser assets and their licenses/checksums live in `web/vendor/`.
+Task prompts, agent messages and exposed reasoning support Markdown headings, lists, tables, fenced code and TeX (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`). Code and display formulas have copy buttons. The “原始文本” selector shows source text. Tool calls and responses are expanded by default, paired by call ID, with multiline code blocks for commands, scripts and output. JSON and Harbor's Python literal response envelopes are decoded for reading using a restricted literal parser; source records and raw fields remain unchanged. Code blocks wrap long lines and preserve indentation. Raw HTML and unsafe TeX commands are disabled. Browser assets and their licenses/checksums live in `web/vendor/`.
 
 ## Prepare and upload a Hugging Face snapshot
 
